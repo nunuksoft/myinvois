@@ -256,6 +256,7 @@ doctype_js = {
     "Purchase Invoice": "public/js/puchase.js",
     "Sales Invoice": "public/js/sales.js",
     "Item": "public/js/item.js",
+    "Supplier": "public/js/supplier.js",
 }
 
 doctype_list_js = {

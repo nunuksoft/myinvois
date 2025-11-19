@@ -3445,7 +3445,7 @@
   "insert_after": "custom_is_return_refund",
   "is_system_generated": 0,
   "is_virtual": 0,
-  "label": "is submit to LHDN",
+  "label": "Is submit to LHDN",
   "length": 0,
   "link_filters": null,
   "mandatory_depends_on": null,
