@@ -30,7 +30,9 @@ from . import __version__ as app_version
 
 # include js, css files in header of desk.html
 # app_include_css = "/assets/myinvois_erpgulf/css/myinvois_erpgulf.css"
-# app_include_js = "/assets/myinvois_erpgulf/js/myinvois_erpgulf.js"
+app_include_js = [
+    "/assets/myinvois_erpgulf/js/searchable_select.js",
+]
 
 # include js, css files in header of web template
 # web_include_css = "/assets/myinvois_erpgulf/css/myinvois_erpgulf.css"

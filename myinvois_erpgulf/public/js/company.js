@@ -111,6 +111,7 @@ frappe.ui.form.on('Company', {
 frappe.ui.form.on("Company", {
     refresh: function(frm) {
         // Optional actions on refresh
+        make_searchable_dropdown(frm, 'custom_msic_code_');
     },
     custom_taxpayer_login: function(frm) {
         frappe.call({
