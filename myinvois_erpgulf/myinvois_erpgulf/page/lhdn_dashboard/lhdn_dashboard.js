@@ -29,6 +29,24 @@ class LhdnDashboard {
             body: this.page.body,
         });
         this.form.make();
+        const style = document.createElement('style');
+        style.textContent = `
+            .lhdn-status-row { display: flex; flex-wrap: wrap; gap: 24px; margin-bottom: 24px; }
+            .lhdn-card { display: block; text-decoration: none; color: inherit; width: calc(50% - 12px); }
+            .lhdn-card-inner { background-color: #f8f9fa; border: 1px solid #dee2e6; border-radius: 8px; padding: 16px; text-align: center; box-shadow: 0 4px 8px rgba(0,0,0,0.1); min-width: 180px; cursor: pointer; transition: transform 0.2s ease; }
+            .lhdn-card-inner:hover { transform: scale(1.02); }
+            .lhdn-charts-container { display: flex; justify-content: space-between; box-sizing: border-box; gap: 16px; }
+            .lhdn-chart { width: 49%; background-color: #f8f9fa; border: 1px solid #dee2e6; border-radius: 8px; padding: 20px; text-align: center; box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1); }
+            .table-responsive { overflow-x: auto; }
+            @media (max-width: 768px) {
+                .lhdn-status-row { flex-direction: column; gap: 16px; }
+                .lhdn-card { width: 100%; }
+                .lhdn-card-inner { min-width: auto; width: 100%; }
+                .lhdn-charts-container { flex-direction: column; }
+                .lhdn-chart { width: 100%; margin-bottom: 16px; }
+            }
+        `;
+        document.head.appendChild(style);
     }
 
 render_cards() {
@@ -89,21 +107,19 @@ render_cards() {
         let cardHtml = '';
 
         for (let i = 0; i < results.length; i += 3) {
-            cardHtml += `<div class="status-row" style="display: flex; gap: 30px; margin-bottom: 30px;">`;
-
+            cardHtml += `<div class="lhdn-status-row">`;
             for (let j = i; j < i + 3 && j < results.length; j++) {
                 const res = results[j];
                 cardHtml += `
-                    <div style="flex: 1;">
+                    <div style="flex: 1; min-width: 280px;">
                         <h4 style="margin-bottom: 10px;">${res.status}</h4>
-                        <div style="display: flex; gap: 12px;">
+                        <div style="display: flex; gap: 12px; flex-wrap: wrap;">
                             ${this.create_card(res.status, res.sales_count, j, "Sales Invoice")}
                             ${this.create_card(res.status, res.purchase_count, j, "Purchase Invoice")}
                         </div>
                     </div>
                 `;
             }
-
             cardHtml += `</div>`;
         }
 
@@ -123,14 +139,8 @@ render_cards() {
             : "LHDN Purchase Status Report";
 
         return `
-            <a href="/app/query-report/${encodeURIComponent(reportName)}?&status=${encodeURIComponent(title)}" style="color: inherit;">
-                <div 
-                    style="flex: 0 0 22%; background-color: #f8f9fa; border: 1px solid #dee2e6; border-radius: 8px; 
-                    padding: 16px; text-align: center; box-shadow: 0 4px 8px rgba(0,0,0,0.1); min-width: 180px; 
-                    cursor: pointer; transition: transform 0.2s ease;"
-                    onmouseover="this.style.transform='scale(1.02)'"
-                    onmouseout="this.style.transform='scale(1)'"
-                >
+            <a class="lhdn-card" href="/app/query-report/${encodeURIComponent(reportName)}?&status=${encodeURIComponent(title)}">
+                <div class="lhdn-card-inner">
                     <h5 style="font-weight: 600; margin-bottom: 8px;">${doctype}</h5>
                     <div style="font-size: 16px; color: #495057;">${title}</div>
                     <div style="font-size: 28px; font-weight: bold; color: ${colors[index % colors.length]};">${count}</div>
@@ -141,11 +151,11 @@ render_cards() {
 
     render_charts() {
         const charts_container = `
-            <div style="display: flex; justify-content: space-between; box-sizing: border-box;">
-                <div style="width: 49%; background-color: #f8f9fa; border: 1px solid #dee2e6; border-radius: 8px; padding: 20px; text-align: center; box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);">
+            <div class="lhdn-charts-container">
+                <div class="lhdn-chart">
                     <canvas id="currentMonthChart" style="flex: 1; height: 250px;"></canvas>
                 </div>
-                <div style="width: 49%; background-color: #f8f9fa; border: 1px solid #dee2e6; border-radius: 8px; padding: 20px; text-align: center; box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);">
+                <div class="lhdn-chart">
                     <canvas id="monthlyChart" style="flex: 1; height: 250px;"></canvas>
                 </div>
             </div>`;
@@ -298,6 +308,7 @@ render_cards() {
                     ).join("");
 
                     const table_html = `
+                        <div class="table-responsive">
                         <table class="table table-bordered table-striped">
                             <thead>
                                 <tr>
@@ -311,7 +322,8 @@ render_cards() {
                             <tbody>
                                 ${rows}
                             </tbody>
-                        </table>`;
+                        </table>
+                        </div>`;
 
                     this.form.get_field("lhdn_list").html(table_html);
                 }
@@ -341,6 +353,7 @@ render_cards() {
                     ).join("");
 
                     const table_html = `
+                        <div class="table-responsive">
                         <table class="table table-bordered table-striped">
                             <thead>
                                 <tr>
@@ -354,7 +367,8 @@ render_cards() {
                             <tbody>
                                 ${rows}
                             </tbody>
-                        </table>`;
+                        </table>
+                        </div>`;
 
                     this.form.get_field("purchase_invoice_list").html(table_html);
                 }
