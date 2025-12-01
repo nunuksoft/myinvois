@@ -23,66 +23,84 @@ def get_api_url(company_abbr, endpoint_path=""):
 
 @frappe.whitelist(allow_guest=True)
 def search_company_tin(company_name):
-    """Search for TIN using company name, ID type, and ID value."""
-    company = frappe.get_doc("Company", company_name)
-    company_abbr = company.abbr
+    try:
+        company = frappe.get_doc("Company", company_name)
+    except Exception as e:
+        return {"error": f"Failed to load Company: {e}"}
 
+    company_abbr = company.abbr
     id_type = (
-        company.custom_company_registrationicpassport_type
-        or company.custom_company_registration_for_self_einvoicing
+        company.custom_company_registration_for_self_einvoicing
     )
     id_value = company.custom_company__registrationicpassport_number
     taxpayer_name = company.custom_taxpayer_name
 
-    # Determine API endpoint and construct query URL
-    if id_type and id_value:
-        endpoint = f"api/v1.0/taxpayer/search/tin?idType={quote(id_type)}&idValue={quote(id_value)}"
+    allowed_company_id_types = {"BRN", "ROC", "ROB", "TIN", "NRIC"}
+    normalized_id_type = id_type.upper() if isinstance(id_type, str) else id_type
+    if normalized_id_type == "MYKAD":
+        normalized_id_type = "NRIC"
+
+    if normalized_id_type and normalized_id_type not in allowed_company_id_types and id_value:
+        return {
+            "error": "Invalid ID Type for Company. Use one of BRN, ROC, ROB, TIN.",
+            "provided": id_type,
+        }
+
+    if normalized_id_type and id_value:
+        endpoint = f"api/v1.0/taxpayer/search/tin?idType={quote(normalized_id_type)}&idValue={quote(id_value)}"
     elif taxpayer_name:
         endpoint = f"api/v1.0/taxpayer/search/tin?taxpayerName={quote(taxpayer_name)}"
     else:
-        frappe.throw(
-            _(
-                "As per LHDN Regulations,Either ID Type and Value or Taxpayer Name must be present in the Company document."
-            )
-        )
+        return {
+            "error": "Either ID Type and Value or Taxpayer Name must be present in the Company document.",
+        }
 
-    query_url = get_api_url(company_abbr, endpoint)
+    try:
+        query_url = get_api_url(company_abbr, endpoint)
+    except Exception as e:
+        return {"error": f"Failed to build API URL: {e}"}
 
-    # Get bearer token
     token = company.custom_bearer_token
+    if not token:
+        return {"error": "Bearer token not found in Company record."}
+
     headers = {"Authorization": f"Bearer {token}", "Accept": "application/json"}
-
-    # Make API request
-    response = requests.get(query_url, headers=headers, timeout=10)
-
-    # Handle token expiration or server error
-    if response.status_code in [401, 500]:
-        get_access_token(company.name)
-        company.reload()
-        token = company.custom_bearer_token
-        headers["Authorization"] = f"Bearer {token}"
+    try:
         response = requests.get(query_url, headers=headers, timeout=10)
+    except Exception as e:
+        return {"error": f"API request failed: {e}"}
 
-    frappe.msgprint(f"Response body: {response.text}")
+    if response.status_code in [401, 500]:
+        try:
+            get_access_token(company.name)
+            company.reload()
+            token = company.custom_bearer_token
+            headers["Authorization"] = f"Bearer {token}"
+            response = requests.get(query_url, headers=headers, timeout=10)
+        except Exception as e:
+            return {"error": f"Token refresh failed: {e}"}
 
     if response.status_code != 200:
-        frappe.throw(_("API request failed: {0}").format(response.text))
+        try:
+            body = response.json()
+            message = body.get("message") or body.get("error") or response.text
+        except Exception:
+            message = response.text
+        return {"error": "API request failed", "status_code": response.status_code, "body": message}
 
     try:
         data = response.json()
     except ValueError:
-        frappe.throw(_("Failed to parse API response."))
+        return {"error": "Failed to parse API response."}
 
-    # Extract TIN
     tin = data.get("tin") or data.get("data", {}).get("tin")
     if not tin:
-        frappe.throw(_("TIN not found in API response."))
+        return {"message": "TIN not found in API response.", "taxpayerTIN": None}
 
-    # Save TIN to Company doc
     company.custom_company_tin_number = tin
     company.save()
 
-    return data
+    return {"taxpayerTIN": tin, "message": _("TIN fetched successfully."), "data": data}
 
 
 from urllib.parse import quote
@@ -189,10 +207,9 @@ def search_purchase_tin(sales_invoice_doc):
         elif isinstance(sales_invoice_doc, str):
             sales_invoice_doc = frappe.get_doc("Purchase Invoice", sales_invoice_doc)
         else:
-            frappe.throw("Invalid argument for sales_invoice_doc")
+            return {"error": "Invalid argument for sales_invoice_doc"}
     except Exception as e:
-        # frappe.log_error(f"Failed to load Purchase Invoice: {e}", "search_purchase_tin")
-        frappe.throw(f"Failed to load Purchase Invoice: {e}")
+        return {"error": f"Failed to load Purchase Invoice: {e}"}
     # frappe.throw(f"Loaded Purchase Invoice: {sales_invoice_doc.name}")
 
     # Fix potential typo in field names here:
@@ -204,15 +221,14 @@ def search_purchase_tin(sales_invoice_doc):
     # frappe.throw(id_value)
     # frappe.throw(taxpayer_name)
     if not company_name:
-        frappe.throw(_("Company must be specified in the Purchase Invoice."))
+        return {"error": "Company must be specified in the Purchase Invoice."}
 
     # Fetch Company doc and abbreviation
     try:
         company_doc = frappe.get_doc("Company", company_name)
         company_abbr = company_doc.abbr
     except Exception as e:
-        # frappe.log_error(f"Failed to load Company doc: {e}", "search_purchase_tin")
-        frappe.throw(f"Failed to load Company doc: {e}")
+        return {"error": f"Failed to load Company doc: {e}"}
     # frappe.throw(company_abbr)
     # frappe.throw(f"Company Abbreviation: {company_doc}")
     # Construct API endpoint URL
@@ -221,11 +237,9 @@ def search_purchase_tin(sales_invoice_doc):
     elif taxpayer_name:
         endpoint = f"api/v1.0/taxpayer/search/tin?taxpayerName={quote(taxpayer_name)}"
     else:
-        frappe.throw(
-            _(
-                "As per LHDN Regulation,Either ID Type and Value or Taxpayer Name must be present in the Purchase Invoice."
-            )
-        )
+        return {
+            "error": "Either ID Type and Value or Taxpayer Name must be present in the Purchase Invoice.",
+        }
 
     query_url = get_api_url(
         company_abbr, endpoint
@@ -234,7 +248,7 @@ def search_purchase_tin(sales_invoice_doc):
     # Get bearer token from company
     token = company_doc.get("custom_bearer_token")
     if not token:
-        frappe.throw(_("Bearer token not found in Company record."))
+        return {"error": "Bearer token not found in Company record."}
 
     headers = {
         "Authorization": f"Bearer {token}",
@@ -245,7 +259,7 @@ def search_purchase_tin(sales_invoice_doc):
         response = requests.get(query_url, headers=headers, timeout=10)
     except requests.exceptions.RequestException as e:
         frappe.log_error(f"API request exception: {e}", "search_purchase_tin")
-        frappe.throw(_("API request failed: {0}").format(e))
+        return {"error": f"API request failed: {e}"}
 
     # Handle token expiration or server error (try refresh once)
     if response.status_code in [401, 500]:
@@ -261,7 +275,7 @@ def search_purchase_tin(sales_invoice_doc):
             frappe.log_error(
                 f"Token refresh or retry failed: {e}", "search_purchase_tin"
             )
-            frappe.throw(_("API request failed after token refresh: {0}").format(e))
+            return {"error": f"API request failed after token refresh: {e}"}
 
     # frappe.log_error(f"API Response Status: {response.status_code}")
     frappe.log_error(f"API Response Text: {response.text}")
@@ -270,19 +284,19 @@ def search_purchase_tin(sales_invoice_doc):
         msg = (
             response.text
             if response.text
-            else f"Status code: {response.status_code} As per LHDN,either type or value or taxpayer data is wrong"
+            else f"Status code: {response.status_code}"
         )
         frappe.log_error(f"API request failed: {msg}", "search_purchase_tin")
-        frappe.throw(_("API request failed: {0}").format(msg))
+        return {"error": "API request failed", "status_code": response.status_code, "body": msg}
 
     try:
         data = response.json()
     except ValueError:
-        frappe.throw(_("Failed to parse API response as JSON."))
+        return {"error": "Failed to parse API response as JSON."}
 
     tin = data.get("tin") or data.get("data", {}).get("tin")
     if not tin:
-        frappe.throw(_("TIN not found in API response."))
+        return {"message": "TIN not found in API response.", "taxpayerTIN": None}
 
     # Save TIN to Purchase Invoice doc
     sales_invoice_doc.db_set("custom_customer_tin_number", tin)

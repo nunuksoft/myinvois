@@ -391,11 +391,30 @@ def submission_url(sales_invoice_doc, company_abbr):
             headers["Authorization"] = f"Bearer {token}"
             response = submit_request()
 
-        response_data = response.json()
-        status = "Approved" if response_data.get("submissionUid") else "Rejected"
-        # sales_invoice_doc.db_set("custom_submit_response", response.text)
-        # frappe.throw(response.text)
-        frappe.msgprint(f"Response body: {response.text}")
+        try:
+            response_data = response.json()
+        except ValueError:
+            frappe.msgprint(_("Received response from LHDN, but it is not valid JSON."))
+            response_data = {}
+        submission_uid = response_data.get("submissionUid") or "-"
+        accepted = response_data.get("acceptedDocuments") or []
+        rejected = response_data.get("rejectedDocuments") or []
+        accepted_codes = ", ".join(
+            [str(d.get("invoiceCodeNumber")) for d in accepted if d.get("invoiceCodeNumber")]
+        ) or "None"
+        rejected_codes = ", ".join(
+            [str(d.get("invoiceCodeNumber")) for d in rejected if d.get("invoiceCodeNumber")]
+        ) or "None"
+        status = "Valid" if accepted and not rejected else (
+            "Partially Accepted" if accepted and rejected else "Invalid"
+        )
+        human_message = (
+            f"LHDN submission status: {status}\n"
+            f"Submission UID: {submission_uid}\n"
+            f"Accepted invoices: {accepted_codes}\n"
+            f"Rejected invoices: {rejected_codes}"
+        )
+        frappe.msgprint(human_message)
         sales_invoice_doc.db_set(
             "custom_submission_time",
             datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),

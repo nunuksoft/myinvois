@@ -287,16 +287,20 @@ def company_data(invoice, sales_invoice_doc):
         )
         cbc_indclacode.text = msic_code_code
 
-        # Company Identifications
-        identifiers = [
-            ("TIN", company_doc.custom_company_tin_number),
-            (
-                company_doc.custom_company_registrationicpassport_type,
-                company_doc.custom_company__registrationicpassport_number,
-            ),
-            ("SST", getattr(company_doc, "custom_sst_number", "NA") or "NA"),
-            ("TTX", getattr(company_doc, "custom_tourism_tax_number", "NA") or "NA"),
-        ]
+        allowed_company_id_types = {"BRN", "ROC", "ROB", "TIN", "NRIC"}
+        reg_type = (
+            getattr(company_doc, "custom_company_registration_for_self_einvoicing", None)
+            or company_doc.custom_company_registrationicpassport_type
+        )
+        reg_value = company_doc.custom_company__registrationicpassport_number
+        reg_type_norm = reg_type.upper() if isinstance(reg_type, str) else reg_type
+        if reg_type_norm == "MYKAD":
+            reg_type_norm = "NRIC"
+        identifiers = [("TIN", company_doc.custom_company_tin_number)]
+        if reg_type_norm in allowed_company_id_types and reg_value:
+            identifiers.append((reg_type_norm, reg_value))
+        identifiers.append(("SST", getattr(company_doc, "custom_sst_number", "NA") or "NA"))
+        identifiers.append(("TTX", getattr(company_doc, "custom_tourism_tax_number", "NA") or "NA"))
 
         for scheme_id, value in identifiers:
             party_id = ET.SubElement(party_, "cac:PartyIdentification")
@@ -675,10 +679,15 @@ def customer_data(invoice, sales_invoice_doc):
 
         cont_customer = ET.SubElement(cac_Party, "cac:Contact")
         tele_party = ET.SubElement(cont_customer, "cbc:Telephone")
-        tele_party.text = str(address.phone)
+        phone_val = str(address.phone or "")
+        phone_digits = re.sub(r"\D", "", phone_val)
+        tele_party.text = phone_val if len(phone_digits) >= 8 else "60100000000"
 
         mail_party = ET.SubElement(cont_customer, "cbc:ElectronicMail")
-        mail_party.text = str(address.email_id)
+        email_val = address.email_id
+        if is_na(email_val) or not is_valid_email(email_val):
+            email_val = "noemail@noemail.com"
+        mail_party.text = str(email_val)
 
         return invoice
     except Exception as e:
