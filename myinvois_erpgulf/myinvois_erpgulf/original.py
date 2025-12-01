@@ -46,6 +46,22 @@ from myinvois_erpgulf.myinvois_erpgulf.taxpayerlogin import get_access_token
 from frappe import _
 
 
+def _format_lhdn_error(resp):
+    try:
+        data = resp
+        if isinstance(resp, str):
+            data = json.loads(resp)
+        err = data.get("error") or {}
+        msg = err.get("message")
+        details = err.get("details")
+        detail_msg = None
+        if isinstance(details, list) and details:
+            d0 = details[0]
+            detail_msg = d0.get("message") or d0.get("code")
+        return detail_msg or msg or "Submission failed"
+    except Exception:
+        return "Submission failed"
+
 def xml_hash():
     """defining the xml hash"""
     try:
@@ -1164,10 +1180,12 @@ def submit_document(invoice_number, any_item_has_tax_template=False):
                     sales_invoice_doc.custom_lhdn_status = "Failed"
                     sales_invoice_doc.save(ignore_permissions=True)
                     frappe.db.commit()
-                    frappe.throw(
-                        f"Submission UID not found.. not submitted due to an error in the response: "
-                        f"{response_data}"
+                    detail = _format_lhdn_error(response_data)
+                    frappe.log_error(
+                        message=json.dumps(response_data, indent=2),
+                        title="LHDN Submission Failed: Missing Submission UID",
                     )
+                    frappe.throw(_(f"LHDN submission failed: {detail}"))
                 # else:
                 else:
                     status= status_submission(invoice_number, sales_invoice_doc, company_abbr)
@@ -1207,7 +1225,7 @@ def submit_document(invoice_number, any_item_has_tax_template=False):
         TypeError,
         frappe.ValidationError,
     ) as e:
-        frappe.log_error(_(f"Error in submit document: {str(e)}"))
+        frappe.log_error(message=str(e), title="Submit Document Error")
     #     tb = traceback.format_exc()
     # # Option 1: Log it to server log and show message
     #     frappe.log_error(tb, title="Submit Document Error")

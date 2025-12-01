@@ -106,7 +106,7 @@ def search_sales_tin(sales_invoice_doc):
     company_name = sales_invoice_doc.company
 
     if not company_name:
-        frappe.throw(_("Company must be specified in the Sales Invoice."))
+        return {"error": "Company must be specified in the Sales Invoice."}
 
     # Fetch Company doc and abbreviation
     company_doc = frappe.get_doc("Company", company_name)
@@ -118,11 +118,9 @@ def search_sales_tin(sales_invoice_doc):
     elif taxpayer_name:
         endpoint = f"api/v1.0/taxpayer/search/tin?taxpayerName={quote(taxpayer_name)}"
     else:
-        frappe.throw(
-            _(
-                "As per LHDN Regulation,Either ID Type and Value or Taxpayer Name must be present in the Sales Invoice."
-            )
-        )
+        return {
+            "error": "Either ID Type and Value or Taxpayer Name must be present in the Sales Invoice.",
+        }
 
     query_url = get_api_url(company_abbr, endpoint)
 
@@ -144,20 +142,20 @@ def search_sales_tin(sales_invoice_doc):
     frappe.msgprint(f"Response body: {response.text}")
 
     if response.status_code != 200:
-        frappe.throw(
-            _(
-                "API request failed ,As per LHDN,either type or value or taxpayer data is wrong: {0}"
-            ).format(response.text)
-        )
+        return {
+            "error": "API request failed",
+            "status_code": response.status_code,
+            "body": response.text,
+        }
 
     try:
         data = response.json()
     except ValueError:
-        frappe.throw(_("Failed to parse API response."))
+        return {"error": "Failed to parse API response."}
 
     tin = data.get("tin") or data.get("data", {}).get("tin")
     if not tin:
-        frappe.throw(_("TIN not found in API response."))
+        return {"message": "TIN not found in API response.", "taxpayerTIN": None}
 
     # Save TIN to Sales Invoice
     sales_invoice_doc.db_set("custom_customer_tin_number", tin)

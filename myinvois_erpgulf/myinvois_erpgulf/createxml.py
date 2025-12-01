@@ -611,10 +611,24 @@ def customer_data(invoice, sales_invoice_doc):
             else "NA"
         )
 
-        if int(frappe.__version__.split(".")[0]) == 13:
-            address = frappe.get_doc("Address", sales_invoice_doc.customer_address)
+        major_version = int(frappe.__version__.split(".")[0])
+        address_name = None
+        if major_version == 13:
+            address_name = sales_invoice_doc.customer_address
         else:
-            address = frappe.get_doc("Address", customer_doc.customer_primary_address)
+            address_name = (
+                customer_doc.customer_primary_address
+                or sales_invoice_doc.customer_address
+                or sales_invoice_doc.shipping_address_name
+            )
+
+        if not address_name:
+            frappe.throw(
+                _(
+                    "Customer address is required. Set a Primary Address on Customer or fill Customer/Shipping Address on the Sales Invoice."
+                )
+            )
+        address = frappe.get_doc("Address", address_name)
 
         if not address.address_line1 or not address.address_line2:
             frappe.throw(_("Customer address must have both Address Line 1 and Address Line 2 filled."))
@@ -696,10 +710,24 @@ def delivery_data(invoice, sales_invoice_doc):
             sales_invoice_doc.custom_customer_registrationicpassport_number
         )
 
-        if int(frappe.__version__.split(".")[0]) == 13:
-            address = frappe.get_doc("Address", sales_invoice_doc.customer_address)
+        major_version = int(frappe.__version__.split(".")[0])
+        address_name = None
+        if major_version == 13:
+            address_name = sales_invoice_doc.customer_address
         else:
-            address = frappe.get_doc("Address", customer_doc.customer_primary_address)
+            address_name = (
+                customer_doc.customer_primary_address
+                or sales_invoice_doc.customer_address
+                or sales_invoice_doc.shipping_address_name
+            )
+
+        if not address_name:
+            frappe.throw(
+                _(
+                    "Delivery address is required. Set a Primary Address on Customer or fill Customer/Shipping Address on the Sales Invoice."
+                )
+            )
+        address = frappe.get_doc("Address", address_name)
 
         postal_address = ET.SubElement(delivery_party, "cac:PostalAddress")
         city_name = ET.SubElement(postal_address, "cbc:CityName")
