@@ -31,19 +31,27 @@ class LhdnDashboard {
         this.form.make();
         const style = document.createElement('style');
         style.textContent = `
+            .lhdn-container { max-width: 1400px; margin: 0 auto; padding: 0 12px; }
             .lhdn-status-row { display: flex; flex-wrap: wrap; gap: 24px; margin-bottom: 24px; }
-            .lhdn-card { display: block; text-decoration: none; color: inherit; width: calc(50% - 12px); }
-            .lhdn-card-inner { background-color: #f8f9fa; border: 1px solid #dee2e6; border-radius: 8px; padding: 16px; text-align: center; box-shadow: 0 4px 8px rgba(0,0,0,0.1); min-width: 180px; cursor: pointer; transition: transform 0.2s ease; }
-            .lhdn-card-inner:hover { transform: scale(1.02); }
+            .lhdn-card-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 12px; }
+            .lhdn-card { display: block; text-decoration: none; color: inherit; width: 100%; }
+            .lhdn-card-inner { background-color: #f8f9fa; border: 1px solid #dee2e6; border-radius: 8px; padding: 16px; text-align: center; box-shadow: 0 4px 8px rgba(0,0,0,0.1); cursor: pointer; transition: transform 0.2s ease; box-sizing: border-box; width: 100%; }
+            .lhdn-card-inner:hover { transform: translateY(-2px); }
             .lhdn-charts-container { display: flex; justify-content: space-between; box-sizing: border-box; gap: 16px; }
             .lhdn-chart { width: 49%; background-color: #f8f9fa; border: 1px solid #dee2e6; border-radius: 8px; padding: 20px; text-align: center; box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1); }
             .table-responsive { overflow-x: auto; }
             @media (max-width: 768px) {
                 .lhdn-status-row { flex-direction: column; gap: 16px; }
-                .lhdn-card { width: 100%; }
+                .lhdn-card-row { grid-template-columns: 1fr; }
                 .lhdn-card-inner { min-width: auto; width: 100%; }
                 .lhdn-charts-container { flex-direction: column; }
                 .lhdn-chart { width: 100%; margin-bottom: 16px; }
+            }
+            @media (min-width: 1200px) {
+                .lhdn-card-row { gap: 16px; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); }
+                .lhdn-charts-container { gap: 24px; }
+                .lhdn-chart canvas { height: 360px !important; }
+                .lhdn-card-inner { padding: 20px; }
             }
         `;
         document.head.appendChild(style);
@@ -113,7 +121,7 @@ render_cards() {
                 cardHtml += `
                     <div style="flex: 1; min-width: 280px;">
                         <h4 style="margin-bottom: 10px;">${res.status}</h4>
-                        <div style="display: flex; gap: 12px; flex-wrap: wrap;">
+                        <div class="lhdn-card-row">
                             ${this.create_card(res.status, res.sales_count, j, "Sales Invoice")}
                             ${this.create_card(res.status, res.purchase_count, j, "Purchase Invoice")}
                         </div>
@@ -123,7 +131,7 @@ render_cards() {
             cardHtml += `</div>`;
         }
 
-        this.form.get_field("summary_cards").html(cardHtml);
+        this.form.get_field("summary_cards").html(`<div class="lhdn-container">${cardHtml}</div>`);
     });
 }
 
@@ -151,12 +159,14 @@ render_cards() {
 
     render_charts() {
         const charts_container = `
-            <div class="lhdn-charts-container">
-                <div class="lhdn-chart">
-                    <canvas id="currentMonthChart" style="flex: 1; height: 250px;"></canvas>
-                </div>
-                <div class="lhdn-chart">
-                    <canvas id="monthlyChart" style="flex: 1; height: 250px;"></canvas>
+            <div class="lhdn-container">
+                <div class="lhdn-charts-container">
+                    <div class="lhdn-chart">
+                        <canvas id="currentMonthChart" style="flex: 1; height: 250px;"></canvas>
+                    </div>
+                    <div class="lhdn-chart">
+                        <canvas id="monthlyChart" style="flex: 1; height: 250px;"></canvas>
+                    </div>
                 </div>
             </div>`;
 
@@ -308,6 +318,7 @@ render_cards() {
                     ).join("");
 
                     const table_html = `
+                        <div class="lhdn-container">
                         <div class="table-responsive">
                         <table class="table table-bordered table-striped">
                             <thead>
@@ -323,6 +334,7 @@ render_cards() {
                                 ${rows}
                             </tbody>
                         </table>
+                        </div>
                         </div>`;
 
                     this.form.get_field("lhdn_list").html(table_html);
@@ -353,6 +365,7 @@ render_cards() {
                     ).join("");
 
                     const table_html = `
+                        <div class="lhdn-container">
                         <div class="table-responsive">
                         <table class="table table-bordered table-striped">
                             <thead>
@@ -368,6 +381,7 @@ render_cards() {
                                 ${rows}
                             </tbody>
                         </table>
+                        </div>
                         </div>`;
 
                     this.form.get_field("purchase_invoice_list").html(table_html);
