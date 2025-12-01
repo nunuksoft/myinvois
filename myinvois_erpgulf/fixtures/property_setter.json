@@ -1,1 +1,66 @@
-[]
+[
+ {
+  "default_value": null,
+  "doc_type": "Sales Invoice",
+  "docstatus": 0,
+  "doctype": "Property Setter",
+  "doctype_or_field": "DocField",
+  "field_name": "custom_customer__registrationicpassport_type",
+  "is_system_generated": 0,
+  "modified": "2025-12-01 14:57:28.819943",
+  "module": "Myinvois Erpgulf",
+  "name": "Sales Invoice-custom_customer__registrationicpassport_type-allow_on_submit",
+  "property": "allow_on_submit",
+  "property_type": "Check",
+  "row_name": null,
+  "value": "1"
+ },
+ {
+  "default_value": null,
+  "doc_type": "Sales Invoice",
+  "docstatus": 0,
+  "doctype": "Property Setter",
+  "doctype_or_field": "DocField",
+  "field_name": "custom_customer_registrationicpassport_number",
+  "is_system_generated": 0,
+  "modified": "2025-12-01 14:57:50.667666",
+  "module": "Myinvois Erpgulf",
+  "name": "Sales Invoice-custom_customer_registrationicpassport_number-allow_on_submit",
+  "property": "allow_on_submit",
+  "property_type": "Check",
+  "row_name": null,
+  "value": "1"
+ },
+ {
+  "default_value": null,
+  "doc_type": "Sales Invoice",
+  "docstatus": 0,
+  "doctype": "Property Setter",
+  "doctype_or_field": "DocField",
+  "field_name": "custom_customer_tin_number",
+  "is_system_generated": 0,
+  "modified": "2025-12-01 14:58:15.308178",
+  "module": "Myinvois Erpgulf",
+  "name": "Sales Invoice-custom_customer_tin_number-allow_on_submit",
+  "property": "allow_on_submit",
+  "property_type": "Check",
+  "row_name": null,
+  "value": "1"
+ },
+ {
+  "default_value": null,
+  "doc_type": "Sales Invoice",
+  "docstatus": 0,
+  "doctype": "Property Setter",
+  "doctype_or_field": "DocField",
+  "field_name": "custom_customer_taxpayer_name",
+  "is_system_generated": 0,
+  "modified": "2025-12-01 14:58:26.255445",
+  "module": "Myinvois Erpgulf",
+  "name": "Sales Invoice-custom_customer_taxpayer_name-allow_on_submit",
+  "property": "allow_on_submit",
+  "property_type": "Check",
+  "row_name": null,
+  "value": "1"
+ }
+]
