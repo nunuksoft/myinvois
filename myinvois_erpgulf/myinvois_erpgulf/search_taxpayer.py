@@ -37,8 +37,6 @@ def search_company_tin(company_name):
 
     allowed_company_id_types = {"BRN", "ROC", "ROB", "TIN", "NRIC"}
     normalized_id_type = id_type.upper() if isinstance(id_type, str) else id_type
-    if normalized_id_type == "MYKAD":
-        normalized_id_type = "NRIC"
 
     if normalized_id_type and normalized_id_type not in allowed_company_id_types and id_value:
         return {
@@ -118,10 +116,10 @@ def search_sales_tin(sales_invoice_doc):
     elif isinstance(sales_invoice_doc, str):
         sales_invoice_doc = frappe.get_doc("Sales Invoice", sales_invoice_doc)
 
-    id_type = sales_invoice_doc.get("custom_customer__registrationicpassport_type")
+    # Derive ID type from Company setting for self e-invoicing
+    company_name = sales_invoice_doc.company
     id_value = sales_invoice_doc.get("custom_customer_registrationicpassport_number")
     taxpayer_name = sales_invoice_doc.get("custom_customer_taxpayer_name")
-    company_name = sales_invoice_doc.company
 
     if not company_name:
         return {"error": "Company must be specified in the Sales Invoice."}
@@ -129,10 +127,15 @@ def search_sales_tin(sales_invoice_doc):
     # Fetch Company doc and abbreviation
     company_doc = frappe.get_doc("Company", company_name)
     company_abbr = company_doc.abbr
+    id_type = company_doc.get("custom_company_registration_for_self_einvoicing")
+    normalized_id_type = id_type.upper() if isinstance(id_type, str) else id_type
+    allowed_id_types = {"BRN", "NRIC", "PASSPORT", "ARMY"}
 
     # Construct API endpoint
-    if id_type and id_value:
-        endpoint = f"api/v1.0/taxpayer/search/tin?idType={quote(id_type)}&idValue={quote(id_value)}"
+    if normalized_id_type and id_value:
+        if normalized_id_type not in allowed_id_types:
+            return {"error": "Invalid ID Type. Use one of BRN, NRIC, PASSPORT, ARMY.", "provided": id_type}
+        endpoint = f"api/v1.0/taxpayer/search/tin?idType={quote(normalized_id_type)}&idValue={quote(id_value)}"
     elif taxpayer_name:
         endpoint = f"api/v1.0/taxpayer/search/tin?taxpayerName={quote(taxpayer_name)}"
     else:
@@ -213,10 +216,14 @@ def search_purchase_tin(sales_invoice_doc):
     # frappe.throw(f"Loaded Purchase Invoice: {sales_invoice_doc.name}")
 
     # Fix potential typo in field names here:
-    id_type = sales_invoice_doc.get("custom_customer__registrationicpassport_type")
+    # Use Company setting for ID type
     id_value = sales_invoice_doc.get("custom_customer_registrationicpassport_number")
     taxpayer_name = sales_invoice_doc.get("custom_supplier_taxpayer_name")
     company_name = sales_invoice_doc.company
+    company_doc = frappe.get_doc("Company", company_name)
+    id_type = company_doc.get("custom_company_registration_for_self_einvoicing")
+    normalized_id_type = id_type.upper() if isinstance(id_type, str) else id_type
+    allowed_id_types = {"BRN", "NRIC", "PASSPORT", "ARMY"}
     # frappe.throw(id_type)
     # frappe.throw(id_value)
     # frappe.throw(taxpayer_name)
@@ -232,8 +239,10 @@ def search_purchase_tin(sales_invoice_doc):
     # frappe.throw(company_abbr)
     # frappe.throw(f"Company Abbreviation: {company_doc}")
     # Construct API endpoint URL
-    if id_type and id_value:
-        endpoint = f"api/v1.0/taxpayer/search/tin?idType={quote(id_type)}&idValue={quote(id_value)}"
+    if normalized_id_type and id_value:
+        if normalized_id_type not in allowed_id_types:
+            return {"error": "Invalid ID Type. Use one of BRN, NRIC, PASSPORT, ARMY.", "provided": id_type}
+        endpoint = f"api/v1.0/taxpayer/search/tin?idType={quote(normalized_id_type)}&idValue={quote(id_value)}"
     elif taxpayer_name:
         endpoint = f"api/v1.0/taxpayer/search/tin?taxpayerName={quote(taxpayer_name)}"
     else:

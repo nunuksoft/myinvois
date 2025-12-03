@@ -23,8 +23,8 @@ frappe.ui.form.on('Sales Invoice', {
             }
         }
 
-        if (should_show_button) {
-            frm.add_custom_button(__('Submit Invoice to LHDN'), function () {
+        if (should_show_button && frm.doc.custom_is_submit_to_lhdn == 1) {
+            frm.add_custom_button(__('Submit Invoice To LHDN'), function () {
                 // Show loading overlay
                 show_loading_overlay();
 

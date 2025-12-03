@@ -883,7 +883,7 @@ def merge_sales_invoices(invoice_numbers):
     # ✅ Avoid GL posting for consolidated invoice
     if new_invoice.get("custom_is_consolidated_invoice"):
         new_invoice.flags.ignore_accounting_impact = True
-        new_invoice.db_set("status", "Consolidated")
+        new_invoice.db_set("status", "Submitted")
         new_invoice.db_set("outstanding_amount", 0.0)
 
     try:
@@ -963,11 +963,11 @@ def merge_sales_invoices(invoice_numbers):
                 },
             )
 
-    new_single_invoice.insert()
-    new_single_invoice.flags.ignore_accounting_impact = True
-    new_single_invoice.db_set("status", "Consolidated")
-    new_single_invoice.db_set("outstanding_amount", 0.0)
-    new_single_invoice.submit()
+        new_single_invoice.insert()
+        new_single_invoice.flags.ignore_accounting_impact = True
+        new_single_invoice.db_set("status", "Submitted")
+        new_single_invoice.db_set("outstanding_amount", 0.0)
+        new_single_invoice.submit()
 
         excluded_items_messages.append(
             f"{item['item_code']} (Amount: {item['amount']}) from Invoice: {inv['name']} "
