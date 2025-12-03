@@ -1,0 +1,163 @@
+{% extends "templates/erpnext_addons_my_web.html" %}
+{% block head_include %}{{ super() }}{% endblock %}
+{% block title %}Malaysia e-Invoice Step‑by‑Step Guide{% endblock %}
+
+{% block breadcrumbs %}
+    {% include "templates/includes/breadcrumbs.html" %}
+{% endblock %}
+
+{% block page_content %}
+<div class="container py-4 docs-small">
+  <h1>Malaysia e-Invoice Step‑by‑Step Guide</h1>
+  <p class="lead">Follow these steps to submit, check status, attach QR, cancel if needed, and use reports.</p>
+
+  <style>
+    .docs-small { font-size: 0.92rem; }
+    .docs-small h1 { font-size: 1.5rem; }
+    .docs-small h2 { font-size: 1.25rem; }
+    .docs-small h3 { font-size: 1.1rem; }
+    .mermaid { margin: 1rem 0 2rem; }
+  </style>
+
+  <div class="row">
+    <div class="col-lg-3 order-lg-last mb-4">
+      <div class="list-group">
+        <a href="#step-1" class="list-group-item list-group-item-action">Step 1: Prepare Invoice</a>
+        <a href="#step-2" class="list-group-item list-group-item-action">Step 2: Submit to LHDN</a>
+        <a href="#step-3" class="list-group-item list-group-item-action">Step 3: Check Status & QR</a>
+        <a href="#step-4" class="list-group-item list-group-item-action">Step 4: Cancel (if needed)</a>
+        <a href="#step-5" class="list-group-item list-group-item-action">Step 5: Find TIN</a>
+        <a href="#step-6" class="list-group-item list-group-item-action">Step 6: Reports & Dashboard</a>
+        <a href="#troubleshooting" class="list-group-item list-group-item-action">Quick Troubleshooting</a>
+        <a href="#faq" class="list-group-item list-group-item-action">FAQ</a>
+      </div>
+    </div>
+
+    <div class="col-lg-9">
+      <section class="mb-4" aria-label="Process overview">
+        <h2>Flow Overview</h2>
+        <div class="mermaid">
+graph TD
+  A[Prepare Invoice] --> B[Submit to LHDN]
+  B --> C[Check Status]
+  C -->|VALID| D[Attach QR]
+  C -->|Pending| E[Check Again]
+  D --> F[Reports & Dashboard]
+  C --> G[Cancel within 72h]
+  F --> H[Find TIN]
+        </div>
+      </section>
+      <section id="step-1" class="mb-4">
+        <h2>Step 1: Prepare Your Invoice</h2>
+        <div class="alert alert-info">Make sure the invoice is complete and submitted in ERPNext.</div>
+        <ol>
+          <li>Open the Sales Invoice or Purchase Invoice.</li>
+          <li>Check that it is submitted (<code>docstatus = 1</code>).</li>
+          <li>If e‑Invoice buttons are missing, ask your administrator to enable company settings.</li>
+        </ol>
+      </section>
+
+      <section id="step-2" class="mb-4">
+        <h2>Step 2: Submit to LHDN</h2>
+        <div class="row">
+          <div class="col-md-6">
+            <h3>Sales Invoice</h3>
+            <ol>
+              <li>Open the Sales Invoice.</li>
+              <li>Click “Submit Invoice To LHDN”.</li>
+              <li>Wait for the confirmation message.</li>
+              <li>Reload the invoice to see updated fields.</li>
+            </ol>
+          </div>
+          <div class="col-md-6">
+            <h3>Purchase Invoice</h3>
+            <ol>
+              <li>Open the Purchase Invoice.</li>
+              <li>Click “Submit Invoice to LHDN”.</li>
+              <li>Wait for the confirmation message.</li>
+              <li>Reload the invoice to see updated fields.</li>
+            </ol>
+          </div>
+        </div>
+      </section>
+
+      <section id="step-3" class="mb-4">
+        <h2>Step 3: Check Status and QR</h2>
+        <ol>
+          <li>Open the submitted invoice.</li>
+          <li>Click “Get Status of SubmittedDoc”.</li>
+          <li>When status becomes “VALID”, a QR code is attached automatically.</li>
+          <li>If QR is missing, click status again or reload the invoice.</li>
+        </ol>
+      </section>
+
+      <section id="step-4" class="mb-4">
+        <h2>Step 4: Cancel (if needed)</h2>
+        <div class="alert alert-warning">Cancellations are only allowed within 72 hours of submission.</div>
+        <ol>
+          <li>Open the submitted invoice you need to cancel.</li>
+          <li>Cancel the document inside ERPNext.</li>
+          <li>The system sends a cancellation request to LHDN.</li>
+          <li>Verify the status on the invoice after cancellation.</li>
+        </ol>
+      </section>
+
+      <section id="step-5" class="mb-4">
+        <h2>Step 5: Find Customer/Supplier TIN</h2>
+        <div class="row">
+          <div class="col-md-6">
+            <h3>Customer TIN (Sales)</h3>
+            <ol>
+              <li>Open the Sales Invoice.</li>
+              <li>Click “Check Customer TIN”.</li>
+              <li>When found, the TIN fills the customer’s TIN field.</li>
+            </ol>
+          </div>
+          <div class="col-md-6">
+            <h3>Supplier TIN (Purchase)</h3>
+            <ol>
+              <li>Open the Purchase Invoice.</li>
+              <li>Click “Check Supplier TIN”.</li>
+              <li>When found, the TIN fills the supplier’s TIN field.</li>
+            </ol>
+          </div>
+        </div>
+      </section>
+
+      <section id="step-6" class="mb-4">
+        <h2>Step 6: Use Reports and Dashboard</h2>
+        <ol>
+          <li>Open the app’s Reports to view Sales Status, Purchase Status, and VAT reports.</li>
+          <li>Use the LHDN Dashboard for real‑time submission insights.</li>
+        </ol>
+      </section>
+
+      <section id="troubleshooting" class="mb-4">
+        <h2>Quick Troubleshooting</h2>
+        <ul>
+          <li>Submit button missing: ensure the invoice is submitted; ask admin to enable e‑Invoice settings.</li>
+          <li>Status pending: click “Get Status of SubmittedDoc” again later.</li>
+          <li>QR missing: once status is “VALID”, reload; if still missing, click status again.</li>
+          <li>Cancellation denied: you may be past the 72‑hour window.</li>
+          <li>TIN not found: confirm the name or ID; try again.</li>
+        </ul>
+      </section>
+
+      <section id="faq" class="mb-4">
+        <h2>FAQ</h2>
+        <ul>
+          <li>What happens after I submit? The system sends your invoice to LHDN and stores the response.</li>
+          <li>When do I get a QR? When LHDN marks the document as “VALID”.</li>
+          <li>Can I cancel any time? No, only within 72 hours after submission.</li>
+          <li>Who configures the app? Your administrator handles company settings and access.</li>
+        </ul>
+      </section>
+
+      <hr class="my-4" />
+
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block page_footer %}{% endblock %}
