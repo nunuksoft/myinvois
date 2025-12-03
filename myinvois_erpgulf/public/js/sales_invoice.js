@@ -1,152 +1,154 @@
-// function extend_listview_event(doctype, event, callback) {
-//     if (!frappe.listview_settings[doctype]) {
-//         frappe.listview_settings[doctype] = {};
-//     }
+frappe.ui.form.on('Sales Invoice', {
+    refresh: function(frm) {
+        if (frm.doc.docstatus !== 1) return;
 
-//     const old_event = frappe.listview_settings[doctype][event];
-//     frappe.listview_settings[doctype][event] = function (listview) {
-//         if (old_event) {
-//             old_event(listview); // Call the original event
-//         }
-//         callback(listview); // Call your custom callback
-//     };
-// }
+        let response = frm.doc.custom_submit_response;
+        let should_show_button = false;
 
-// // Extend the "onload" event for Sales Invoice
-// extend_listview_event("Sales Invoice", "onload", function (listview) {
-//     // Add the "Merge and Consolidate Invoices" action to the menu
-//     listview.page.add_action_item(__("Merge and Consolidate Invoices"), () => {
-//         const selected = listview.get_checked_items();
-//         if (selected.length < 2) {
-//             frappe.msgprint(__('Please select at least two Sales Invoices to merge.'));
-//             return;
-//         }
+        if (!response) {
+            should_show_button = true;
+        } else {
+            try {
+                let parsed = JSON.parse(response);
 
-//         // Confirmation dialog before merging
-//         frappe.confirm(
-//             `Are you sure you want to merge ${selected.length} invoices into a single one?`,
-//             () => {
-//                 // If user confirms, proceed with merging
-//                 frappe.call({
-//                     method: "myinvois_erpgulf.myinvois_erpgulf.consolidate_invoice.merge_sales_invoices",
-//                     args: {
-//                         invoice_numbers: selected.map(invoice => invoice.name)
-//                     },
-//                     callback: function (response) {
-//                         if (response.message) {
-//                             frappe.msgprint(__('Invoices successfully merged into one consolidated invoice: ') + response.message);
-//                             listview.refresh();
-//                             listview.check_all(false);
-//                         } else {
-//                             frappe.msgprint(__('Failed to merge invoices. Please check logs for details.'));
-//                         }
-//                     }
-//                 });
-//             },
-//             () => {
-//                 // If user cancels, do nothing
-//                 frappe.msgprint(__('Invoice merge operation cancelled.'));
-//             }
-//         );
-//     });
+                if (
+                    !parsed.submissionUid ||
+                    !Array.isArray(parsed.acceptedDocuments) ||
+                    parsed.acceptedDocuments.length === 0
+                ) {
+                    should_show_button = true;
+                }
+            } catch (e) {
+                should_show_button = true;
+            }
+        }
 
-//     console.log('Custom "Merge and Consolidate Invoices" action added to Sales Invoice list view.');
-// });
+        if (should_show_button) {
+            frm.add_custom_button(__('Submit Invoice to LHDN'), function () {
+                // Show loading overlay
+                show_loading_overlay();
 
+                frappe.call({
+                    method: "myinvois_erpgulf.myinvois_erpgulf.original.submit_document",
+                    args: {
+                        "invoice_number": frm.doc.name
+                    },
+                    callback: function (response) {
+                        // Hide loading overlay
+                        hide_loading_overlay();
 
-// frappe.listview_settings['Sales Invoice'] = frappe.listview_settings['Sales Invoice'] || {};
+                        if (response.message) {
+                            frm.reload_doc();
+                            frappe.msgprint(__("Invoice XML submitted successfully!"));
+                        }
+                    },
+                    error: function () {
+                        hide_loading_overlay();
+                        frappe.msgprint(__('Something went wrong during submission.'));
+                    }
+                });
+            },"E-Invoice");
+        }
+    }
+});
 
-// frappe.listview_settings['Sales Invoice'].get_indicator = function (doc) {
-//     if (doc.status === "Consolidated") {
-//         return [__("Consolidated"), "red", "status,=,Consolidated"];
-//     }
-//     return [__(doc.status), frappe.utils.guess_colour(doc.status), `status,=,${doc.status}`];
-// };
-
-// Helper to show loading overlay
+// Reusable helpers
 function show_loading_overlay() {
     if (!$('#custom-loading-overlay').length) {
         $('body').append(`
             <div id="custom-loading-overlay" style="
                 position: fixed;
                 top: 0; left: 0; right: 0; bottom: 0;
-                background: rgba(255, 255, 255, 0.8);
-                z-index: 9999;
+                background: rgba(255, 255, 255, 0.7);
+                z-index: 10000;
                 display: flex;
                 align-items: center;
                 justify-content: center;
             ">
-                <img src="/assets/myinvois_erpgulf/js/loading01.gif" alt="Loading..." style="width: 100px; height: 100px;" />
+                <img src="/assets/myinvois_erpgulf/js/loading01.gif" alt="Loading..." style="width: 100px;" />
             </div>
         `);
     }
 }
 
-// Helper to hide loading overlay
 function hide_loading_overlay() {
     $('#custom-loading-overlay').remove();
 }
 
-// Function to extend ListView events
-function extend_listview_event(doctype, event, callback) {
-    if (!frappe.listview_settings[doctype]) {
-        frappe.listview_settings[doctype] = {};
-    }
 
-    const old_event = frappe.listview_settings[doctype][event];
-    frappe.listview_settings[doctype][event] = function (listview) {
-        if (old_event) {
-            old_event(listview);
-        }
-        callback(listview);
-    };
-}
 
-// Extend "onload" event for Sales Invoice
-extend_listview_event("Sales Invoice", "onload", function (listview) {
-    listview.page.add_action_item(__("Merge and Consolidate Invoices"), () => {
-        const selected = listview.get_checked_items();
-        if (selected.length < 2) {
-            frappe.msgprint(__('Please select at least two Sales Invoices to merge.'));
-            return;
-        }
-
-        frappe.confirm(
-            `Are you sure you want to merge ${selected.length} invoices into a single one?`,
-            () => {
-                // Show loading GIF
-                show_loading_overlay();
-
-                frappe.call({
-                    method: "myinvois_erpgulf.myinvois_erpgulf.consolidate_invoice.merge_sales_invoices",
-                    args: {
-                        invoice_numbers: selected.map(invoice => invoice.name)
-                    },
-                    callback: function (response) {
-                        // Hide loading GIF
-                        hide_loading_overlay();
-
-                        if (response.message) {
-                            frappe.msgprint(__('Invoices successfully merged into one consolidated invoice: ') + response.message);
-                            listview.refresh();
-                            listview.check_all(false);
-                        } else {
-                            frappe.msgprint(__('Failed to merge invoices. Please check logs for details.'));
-                        }
-                    },
-                    error: function () {
-                        hide_loading_overlay();
-                        frappe.msgprint(__('An error occurred during invoice merge.'));
+frappe.ui.form.on('Sales Invoice', { 
+    refresh: function(frm) {
+        // Add the custom button
+        frm.add_custom_button(__('Get Status of SubmittedDoc'), function() {
+            // Call the backend method to get the status
+            frappe.call({
+                method: "myinvois_erpgulf.myinvois_erpgulf.get_status.status_submit",
+                args: {
+                    "doc": frm.doc  // Pass the current document
+                },
+                callback: function(response) {
+                    if (response.message) {
+                        frappe.msgprint(__("Status updated successfully! Check the logs for details."));
+                        frm.reload_doc();  // Reload the form to reflect any changes
                     }
-                });
-            },
-            () => {
-                frappe.msgprint(__('Invoice merge operation cancelled.'));
-            }
-        );
-    });
+                }
+            });
+        },"E-Invoice");
+        },
 
-    console.log('Custom "Merge and Consolidate Invoices" action added to Sales Invoice list view.');
+    custom_check_customer_tin: function(frm) {
+        frappe.call({
+            method: "myinvois_erpgulf.myinvois_erpgulf.search_taxpayer.search_sales_tin", 
+            args: {
+                sales_invoice_doc: frm.doc.name 
+            },
+            callback: function(r) {
+                if (!r.exc) {
+                    if (r.message?.taxpayerTIN) {
+                        frappe.msgprint(__('TIN Fetched Successfully: ') + r.message.taxpayerTIN);
+                    } else {
+                        frappe.msgprint(__('TIN lookup completed, but TIN was not found.'));
+                    }
+                    frm.reload_doc();  // Refresh the document to reflect any updates
+                } else {
+                    frappe.msgprint(__('Something went wrong while fetching TIN.'));
+                }
+            }
+        });
+    }
 });
 
 
+
+
+
+frappe.realtime.on('show_lhdn_loader', () => {
+    show_loading_overlay();
+});
+
+frappe.realtime.on('hide_lhdn_loader', () => {
+    hide_loading_overlay();
+});
+
+function show_loading_overlay() {
+    if (!$('#custom-loading-overlay').length) {
+        $('body').append(`
+            <div id="custom-loading-overlay" style="
+                position: fixed;
+                top: 0; left: 0; right: 0; bottom: 0;
+                background: rgba(255, 255, 255, 0.7);
+                z-index: 10000;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+            ">
+                <img src="/assets/myinvois_erpgulf/js/loading01.gif" style="width: 100px;" />
+            </div>
+        `);
+    }
+}
+
+function hide_loading_overlay() {
+    $('#custom-loading-overlay').remove();
+}

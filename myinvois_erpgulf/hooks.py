@@ -254,13 +254,13 @@ doctype_js = {
     "Company": "public/js/company.js",
     "Customer": "public/js/customer.js",
     "Purchase Invoice": "public/js/puchase.js",
-    "Sales Invoice": "public/js/sales.js",
+    "Sales Invoice": "public/js/sales_invoice.js",
     "Item": "public/js/item.js",
     "Supplier": "public/js/supplier.js",
 }
 
 doctype_list_js = {
-    "Sales Invoice": "public/js/sales_invoice.js",
+    "Sales Invoice": "public/js/sales_invoice_list.js",
 }
 
 
