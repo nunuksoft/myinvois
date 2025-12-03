@@ -703,8 +703,7 @@ def merge_sales_invoices(invoice_numbers):
     if not invoice_numbers or len(invoice_numbers) < 2:
         frappe.throw(_("Please select at least two Sales Invoices to merge."))
 
-    # Fetch invoices
-    sales_invoices = frappe.get_all(
+    all_invoices = frappe.get_all(
         "Sales Invoice",
         filters={"name": ["in", invoice_numbers]},
         fields=[
@@ -721,16 +720,40 @@ def merge_sales_invoices(invoice_numbers):
             "is_pos",
             "debit_to",
             "docstatus",
+            "custom_consolidate_invoice_number",
         ],
     )
 
-    if not sales_invoices:
+    if not all_invoices:
         frappe.throw(_("No valid Sales Invoices found."))
+
+    not_submitted = [inv["name"] for inv in all_invoices if inv["docstatus"] != 1]
+    if not_submitted:
+        frappe.throw(
+            _("Only submitted Sales Invoices can be merged:")
+            + "<br>"
+            + "<br>".join(not_submitted)
+        )
+
+    already_consolidated = [
+        inv["name"]
+        for inv in all_invoices
+        if inv.get("custom_consolidate_invoice_number")
+    ]
+    if already_consolidated:
+        frappe.throw(
+            _(
+                "The following invoices are already consolidated and cannot be merged again:"
+            )
+            + "<br>"
+            + "<br>".join(already_consolidated)
+        )
 
     sales_invoices = frappe.get_all(
         "Sales Invoice",
         filters={
             "name": ["in", invoice_numbers],
+            "docstatus": 1,
             "custom_consolidate_invoice_number": ["is", "not set"],
         },
         fields=[
@@ -749,21 +772,6 @@ def merge_sales_invoices(invoice_numbers):
             "docstatus",
         ],
     )
-
-    already_merged = [
-        name
-        for name in invoice_numbers
-        if name not in [inv["name"] for inv in sales_invoices]
-    ]
-
-    if already_merged:
-        frappe.throw(
-            _(
-                "The following invoices are already consolidated and cannot be merged again:"
-            )
-            + "<br>"
-            + "<br>".join(already_merged)
-        )
 
     base_invoice = sales_invoices[0]
 
@@ -955,8 +963,11 @@ def merge_sales_invoices(invoice_numbers):
                 },
             )
 
-        new_single_invoice.insert()
-        new_single_invoice.submit()
+    new_single_invoice.insert()
+    new_single_invoice.flags.ignore_accounting_impact = True
+    new_single_invoice.db_set("status", "Consolidated")
+    new_single_invoice.db_set("outstanding_amount", 0.0)
+    new_single_invoice.submit()
 
         excluded_items_messages.append(
             f"{item['item_code']} (Amount: {item['amount']}) from Invoice: {inv['name']} "
