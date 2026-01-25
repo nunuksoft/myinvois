@@ -76,7 +76,7 @@ frappe.ui.form.on('Purchase Invoice', {
                     }
                 }
             });
-        });
+        },"e-Invoice");
 
         // Only proceed with Submit button if docstatus is 1
         if (frm.doc.docstatus !== 1) return;
@@ -126,7 +126,7 @@ frappe.ui.form.on('Purchase Invoice', {
                         // frappe.msgprint(__('Error occurred while submitting the invoice.'));
                     }
                 });
-            });
+            },"e-Invoice");
         }
     }
 });
