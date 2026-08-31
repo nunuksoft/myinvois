@@ -21,7 +21,7 @@ def get_api_url(company_abbr, endpoint_path=""):
         return None
 
 
-@frappe.whitelist(allow_guest=True)
+@frappe.whitelist(allow_guest=False)
 def search_company_tin(company_name):
     try:
         company = frappe.get_doc("Company", company_name)
@@ -104,7 +104,7 @@ def search_company_tin(company_name):
 from urllib.parse import quote
 
 
-@frappe.whitelist(allow_guest=True)
+@frappe.whitelist(allow_guest=False)
 def search_sales_tin(sales_invoice_doc):
     """Search for TIN using Sales Invoice's customer details (ID type/value or name)."""
 
@@ -193,7 +193,7 @@ import requests
 from urllib.parse import quote
 
 
-@frappe.whitelist(allow_guest=True)
+@frappe.whitelist(allow_guest=False)
 def search_purchase_tin(sales_invoice_doc):
     """
     Search for TIN using Purchase Invoice's customer details (ID type/value or name).

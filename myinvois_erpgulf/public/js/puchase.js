@@ -1,7 +1,7 @@
 // frappe.ui.form.on('Purchase Invoice', {
 //     refresh: function(frm) {
 //         // Add the "Get Status" button regardless of docstatus
-//         frm.add_custom_button(__('Get Status of SubmittedDoc'), function() {
+//         frm.add_custom_button(__('Check Status'), function() {
 //             frappe.call({
 //                 method: "myinvois_erpgulf.myinvois_erpgulf.get_status.status_submit",
 //                 args: {
@@ -40,7 +40,7 @@
 //         }
 
 //         if (should_show_button) {
-//             frm.add_custom_button(__('Submit Invoice to LHDN'), function() {
+//             frm.add_custom_button(__('Submit to LHDN'), function() {
 //                 frappe.call({
 //                     method: "myinvois_erpgulf.myinvois_erpgulf.submit_purchase.submit_document",
 //                     args: {
@@ -63,7 +63,7 @@
 frappe.ui.form.on('Purchase Invoice', {
     refresh: function(frm) {
         // Always show "Get Status" button
-        frm.add_custom_button(__('Get Status of SubmittedDoc'), function () {
+        frm.add_custom_button(__('Check Status'), function () {
             frappe.call({
                 method: "myinvois_erpgulf.myinvois_erpgulf.get_status.status_submit",
                 args: {
@@ -102,7 +102,7 @@ frappe.ui.form.on('Purchase Invoice', {
         }
 
         if (should_show_button) {
-            frm.add_custom_button(__('Submit Invoice to LHDN'), function () {
+            frm.add_custom_button(__('Submit to LHDN'), function () {
                 // 🔄 Show loading GIF
                 show_loading_overlay();
 

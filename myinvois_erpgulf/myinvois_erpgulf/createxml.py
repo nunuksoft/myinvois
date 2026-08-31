@@ -2,6 +2,7 @@
 
 import xml.etree.ElementTree as ET
 from datetime import datetime, timezone
+from decimal import Decimal, ROUND_HALF_UP
 import json
 import re
 from frappe import _  # Importing the translation function
@@ -9,6 +10,10 @@ import frappe
 import requests
 import pyqrcode
 from myinvois_erpgulf.myinvois_erpgulf.taxpayerlogin import get_access_token
+from myinvois_erpgulf.myinvois_erpgulf.consolidate_invoice import (
+    buyer_general_tin,
+    is_consolidated_buyer,
+)
 
 
 def get_icv_code(invoice_number):
@@ -287,18 +292,38 @@ def company_data(invoice, sales_invoice_doc):
         )
         cbc_indclacode.text = msic_code_code
 
-        allowed_company_id_types = {"BRN", "ROC", "ROB", "TIN", "NRIC"}
-        reg_type = (
-            getattr(company_doc, "custom_company_registration_for_self_einvoicing", None)
-            or company_doc.custom_company_registrationicpassport_type
-        )
+        # LHDN scheme IDs for the supplier's registration identifier. Labels
+        # from the older MyTax-style dropdown are mapped onto them so existing
+        # Company records keep working.
+        reg_type = company_doc.get(
+            "custom_company_registrationicpassport_type"
+        ) or company_doc.get("custom_company_registration_for_self_einvoicing")
         reg_value = company_doc.custom_company__registrationicpassport_number
-        reg_type_norm = reg_type.upper() if isinstance(reg_type, str) else reg_type
-        if reg_type_norm == "MYKAD":
-            reg_type_norm = "NRIC"
+
+        reg_type_norm = str(reg_type).strip().upper() if reg_type else ""
+        reg_type_norm = LEGACY_SUPPLIER_ID_TYPES.get(reg_type_norm, reg_type_norm)
+
+        # This identifier is mandatory [1..1] for the supplier. The old code
+        # dropped the element whenever the type was not recognised - including
+        # for PASSPORT and ARMY, which the dropdown offered - producing an
+        # invalid document instead of a usable error.
+        if not reg_type_norm or not reg_value:
+            frappe.throw(
+                _(
+                    "LHDN requires the supplier's registration identifier. Set"
+                    " Company Registration/IC/Passport Type and Number on {0}."
+                ).format(company_doc.name)
+            )
+        if reg_type_norm not in SUPPLIER_ID_TYPES:
+            frappe.throw(
+                _(
+                    "Company Registration/IC/Passport Type on {0} is '{1}', which"
+                    " LHDN does not accept. Use one of: {2}."
+                ).format(company_doc.name, reg_type, ", ".join(sorted(SUPPLIER_ID_TYPES)))
+            )
+
         identifiers = [("TIN", company_doc.custom_company_tin_number)]
-        if reg_type_norm in allowed_company_id_types and reg_value:
-            identifiers.append((reg_type_norm, reg_value))
+        identifiers.append((reg_type_norm, reg_value))
         identifiers.append(("SST", getattr(company_doc, "custom_sst_number", "NA") or "NA"))
         identifiers.append(("TTX", getattr(company_doc, "custom_tourism_tax_number", "NA") or "NA"))
 
@@ -388,6 +413,10 @@ def company_data(invoice, sales_invoice_doc):
 
         return invoice
 
+    except frappe.ValidationError:
+        # A frappe.throw() raised inside this block is already a clear,
+        # actionable LHDN message - let it through instead of re-wrapping it.
+        raise
     except (
         frappe.DoesNotExistError,
         frappe.ValidationError,
@@ -407,6 +436,215 @@ def is_na(value):
 def is_valid_email(email):
     email_regex = r"^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$"
     return re.match(email_regex, email) is not None
+
+
+BUYER_ID_TYPES = {"BRN", "NRIC", "PASSPORT", "ARMY"}
+SUPPLIER_ID_TYPES = {"BRN", "NRIC", "PASSPORT", "ARMY"}
+# LHDN rejects the General Public buyer block (general TIN EI00000000010 with
+# BRN/NRIC "NA", and state code 17) unless every line is classified as a
+# consolidated e-Invoice - errors ERR236 and CV317.
+CONSOLIDATED_CLASSIFICATION_CODE = "004"
+LEGACY_SUPPLIER_ID_TYPES = {
+    "MYKAD": "NRIC",
+    "MYKAS": "NRIC",
+    "MY TENTERA": "ARMY",
+    "MYTENTERA": "ARMY",
+    "ROC": "BRN",
+    "ROB": "BRN",
+}
+
+
+def na_if_blank(value):
+    """LHDN input for an identifier the buyer does not hold.
+
+    Guards against str(None) leaking the literal "None" into the e-Invoice.
+    """
+    if value is None or str(value).strip() in ("", "None"):
+        return "NA"
+    return str(value).strip()
+
+
+def require_buyer_field(value, label, sales_invoice_doc, allowed=None):
+    """Return a buyer field LHDN marks mandatory [1..1], or refuse to submit.
+
+    These must never be guessed or defaulted - submitting "None" or a blank
+    would be a false declaration. When the detail genuinely is not available
+    the compliant route is a consolidated e-Invoice, so the message names both
+    ways out instead of just failing.
+    """
+    cleaned = None if value is None else str(value).strip()
+    if not cleaned or cleaned == "None":
+        frappe.throw(
+            _(
+                "{0} is required by LHDN before this invoice can be submitted."
+                " Either fill it on Customer {1}, or - if the buyer did not"
+                " request an e-Invoice - untick 'Is submit to LHDN' and include"
+                " this invoice in a consolidated e-Invoice instead."
+            ).format(label, sales_invoice_doc.customer)
+        )
+    if allowed and cleaned.upper() not in allowed:
+        frappe.throw(
+            _(
+                "{0} on Customer {1} is '{2}', which LHDN does not accept."
+                " Use one of: {3}."
+            ).format(label, sales_invoice_doc.customer, cleaned, ", ".join(sorted(allowed)))
+        )
+    return cleaned
+
+
+def invoice_tax_rate(sales_invoice_doc):
+    """Rate of the invoice's first tax row, or 0 when it has none.
+
+    A zero-rated or non-taxable invoice (Malaysia tax category "06 - Not
+    Applicable", or an exempt supply) carries no Sales Taxes and Charges rows
+    at all. LHDN still expects a TaxTotal, with a tax amount of 0.00 - so the
+    absence of a tax row means a rate of zero, not an error.
+    """
+    taxes = sales_invoice_doc.get("taxes") or []
+    if not taxes:
+        return 0.0
+    return float(taxes[0].rate or 0)
+
+
+TWO_PLACES = Decimal("0.01")
+
+
+def dec(value):
+    """Exact decimal for monetary arithmetic.
+
+    Currency fields come back from the database as binary floats, which do not
+    add or subtract exactly - 333.30 - 0.0 lands on 333.29999999999995. Going
+    through str() captures the decimal figure actually stored, so the
+    arithmetic is done on that rather than on the nearest double.
+    """
+    if isinstance(value, Decimal):
+        return value
+    return Decimal(str(value or 0))
+
+
+def money(value):
+    """Format a monetary amount for the e-Invoice, rounded half-up to 2 places."""
+    return str(dec(value).quantize(TWO_PLACES, rounding=ROUND_HALF_UP))
+
+
+# MyInvois caps the product/service description field.
+MAX_DESCRIPTION_LENGTH = 300
+
+
+MALAYSIA_ALPHA3 = "MYS"
+# LHDN state code 17 = "Not Applicable", which is what a non-Malaysian address
+# must carry - CountrySubentityCode only accepts Malaysian state codes.
+STATE_CODE_NOT_APPLICABLE = "17"
+
+
+def country_alpha3(address):
+    """ISO 3166-1 alpha-3 country code for an Address, as LHDN expects.
+
+    ERPNext stores only the alpha-2 code on Country, so it is widened via
+    pycountry (an ERPNext dependency). An address with no country set is
+    treated as Malaysian, which is what the builders assumed before.
+    """
+    country_name = address.get("country") if address else None
+    if not country_name:
+        return MALAYSIA_ALPHA3
+
+    alpha2 = frappe.db.get_value("Country", country_name, "code")
+    if not alpha2:
+        frappe.throw(
+            _(
+                "Country {0} has no ISO code, so the e-Invoice cannot state where"
+                " the buyer is. Set the Code field on that Country."
+            ).format(country_name)
+        )
+
+    import pycountry
+
+    match = pycountry.countries.get(alpha_2=str(alpha2).upper())
+    if not match:
+        frappe.throw(
+            _("Country code {0} on {1} is not a valid ISO 3166-1 code.").format(
+                alpha2, country_name
+            )
+        )
+    return match.alpha_3
+
+
+def state_subentity_code(address):
+    """CountrySubentityCode for an Address.
+
+    LHDN's state list is Malaysian-only; anything abroad is reported as 17
+    ("Not Applicable"). Using a real state code on a foreign address is what
+    triggers validation error CV317.
+    """
+    if country_alpha3(address) != MALAYSIA_ALPHA3:
+        return STATE_CODE_NOT_APPLICABLE
+    state_code = address.get("custom_state_code")
+    return state_code.split(":")[0].strip() if state_code else STATE_CODE_NOT_APPLICABLE
+
+
+def plain_text(value):
+    """Flatten ERPNext rich text to a single line of plain text.
+
+    Item descriptions are edited in a rich-text control, so they arrive as
+    HTML. Escaping that into cbc:Description ships markup to LHDN and blows
+    the field's length limit.
+    """
+    if not value:
+        return ""
+    # Block-level tags carry the line breaks; without a separator the words on
+    # either side run together ("Kota Kinabalu" + "u/p:" -> "Kinabaluu/p:").
+    text = re.sub(r"<\s*(br|/p|/div|/li|/tr|/h[1-6])\s*/?\s*>", " ", str(value), flags=re.I)
+    text = frappe.utils.strip_html(text)
+    text = text.replace("&nbsp;", " ").replace("\xa0", " ")
+    return " ".join(text.split())
+
+
+def item_classification_code(single_item, consolidated_buyer):
+    """LHDN classification code for one invoice line.
+
+    A General Public buyer forces "004" - LHDN only accepts that buyer block on
+    a consolidated e-Invoice (ERR236/CV317). Otherwise the line's own code is
+    used; it is mandatory with a default of "022:Others", so a blank means the
+    row was written around the form and is refused rather than sent as "None".
+    """
+    if consolidated_buyer:
+        return CONSOLIDATED_CLASSIFICATION_CODE
+
+    raw = single_item.get("custom_item_classification_codes")
+    code = str(raw).split(":")[0].strip() if raw else ""
+    if not code or code == "None":
+        frappe.throw(
+            _(
+                "Item {0} has no e-Invoice classification code. Set it on the"
+                " invoice line, or on the Item so it fills in automatically."
+            ).format(single_item.item_code)
+        )
+    return code
+
+
+def item_description(single_item):
+    """Text for cac:Item/cbc:Description on one invoice line.
+
+    On a consolidated e-Invoice, LHDN e-Invoice Specific Guideline Appendix 2
+    (7) requires the receipt reference number of every source transaction to
+    appear in this field, so the reference stamped on the line by
+    merge_sales_invoices() is prefixed to the description.
+    """
+    description = plain_text(single_item.description)
+    item_name = plain_text(single_item.item_name)
+
+    desc = ""
+    if description and item_name:
+        desc = f"{description} - {item_name}"
+    elif description:
+        desc = description
+    elif item_name:
+        desc = item_name
+
+    reference = single_item.get("custom_consolidated_invoice_refrence_copy")
+    if reference and str(reference) not in desc:
+        desc = f"{reference} - {desc}" if desc else str(reference)
+    return desc[:MAX_DESCRIPTION_LENGTH]
 
 
 # def company_data(invoice, sales_invoice_doc):
@@ -569,15 +807,25 @@ def customer_data(invoice, sales_invoice_doc):
 
         party_id_1 = ET.SubElement(cac_Party, "cac:PartyIdentification")
         prty_id = ET.SubElement(party_id_1, "cbc:ID", schemeID="TIN")
-        prty_id.text = str(sales_invoice_doc.custom_customer_tin_number)
+        # Appendix 1 - a general TIN replaces the buyer's own where the buyer
+        # type allows it; every other buyer detail is still their real one.
+        general_tin = buyer_general_tin(customer_doc)
+        prty_id.text = general_tin or require_buyer_field(
+            sales_invoice_doc.custom_customer_tin_number,
+            "Customer TIN number",
+            sales_invoice_doc,
+        )
 
         party_identifn_2 = ET.SubElement(cac_Party, "cac:PartyIdentification")
         id_party2 = ET.SubElement(
             party_identifn_2,
             "cbc:ID",
-            schemeID=str(
-                sales_invoice_doc.custom_customer__registrationicpassport_type
-            ),
+            schemeID=require_buyer_field(
+                sales_invoice_doc.custom_customer__registrationicpassport_type,
+                "Customer Registration/IC/Passport Type",
+                sales_invoice_doc,
+                allowed=BUYER_ID_TYPES,
+            ).upper(),
         )
         customer_doc.custom_customer__registrationicpassport_type = (
             sales_invoice_doc.custom_customer__registrationicpassport_type
@@ -587,8 +835,10 @@ def customer_data(invoice, sales_invoice_doc):
         )
         # Save the Customer doc
 
-        id_party2.text = str(
-            sales_invoice_doc.custom_customer_registrationicpassport_number
+        id_party2.text = require_buyer_field(
+            sales_invoice_doc.custom_customer_registrationicpassport_number,
+            "Customer Registration/IC/Passport Number",
+            sales_invoice_doc,
         )  # Buyer’s Registration / Identification Number / Passport Number
         customer_doc.custom_customer_registrationicpassport_number = (
             sales_invoice_doc.custom_customer_registrationicpassport_number
@@ -601,19 +851,11 @@ def customer_data(invoice, sales_invoice_doc):
             getattr(customer_doc, "custom_sst_number", "NA") or "NA"
         )
 
-        value_id3.text = (
-            str(customer_doc.custom_sst_number)
-            if str(customer_doc.custom_sst_number)
-            else "NA"
-        )
+        value_id3.text = na_if_blank(customer_doc.custom_sst_number)
 
         partyid_4 = ET.SubElement(cac_Party, "cac:PartyIdentification")
         value_id4 = ET.SubElement(partyid_4, "cbc:ID", schemeID="TTX")
-        value_id4.text = (
-            str(customer_doc.custom_tourism_tax_number)
-            if str(customer_doc.custom_tourism_tax_number)
-            else "NA"
-        )
+        value_id4.text = na_if_blank(customer_doc.custom_tourism_tax_number)
 
         major_version = int(frappe.__version__.split(".")[0])
         address_name = None
@@ -643,13 +885,7 @@ def customer_data(invoice, sales_invoice_doc):
         post_zone = ET.SubElement(posta_address, "cbc:PostalZone")
         post_zone.text = address.pincode
         cntry_sub_cod = ET.SubElement(posta_address, "cbc:CountrySubentityCode")
-        # statecode = (address.custom_state_code).split(":")[0]
-        statecode= (
-            address.custom_state_code.split(":")[0]
-            if address.custom_state_code
-            else "17"
-        )
-        cntry_sub_cod.text = statecode
+        cntry_sub_cod.text = state_subentity_code(address)
 
         add_cust_line1 = ET.SubElement(posta_address, "cac:AddressLine")
         add_line1 = ET.SubElement(add_cust_line1, "cbc:Line")
@@ -671,7 +907,7 @@ def customer_data(invoice, sales_invoice_doc):
             listAgencyID="6",
             listID="ISO3166-1",
         )
-        idntfn_code_val.text = "MYS"
+        idntfn_code_val.text = country_alpha3(address)
 
         party_legalEntity = ET.SubElement(cac_Party, "cac:PartyLegalEntity")
         reg_name_val = ET.SubElement(party_legalEntity, "cbc:RegistrationName")
@@ -690,6 +926,10 @@ def customer_data(invoice, sales_invoice_doc):
         mail_party.text = str(email_val)
 
         return invoice
+    except frappe.ValidationError:
+        # A frappe.throw() raised inside this block is already a clear,
+        # actionable LHDN message - let it through instead of re-wrapping it.
+        raise
     except Exception as e:
         frappe.throw(_(f"Error customer data: {str(e)}"))
         return None
@@ -705,18 +945,28 @@ def delivery_data(invoice, sales_invoice_doc):
 
         party_id_tin = ET.SubElement(delivery_party, "cac:PartyIdentification")
         tin_id = ET.SubElement(party_id_tin, "cbc:ID", schemeID="TIN")
-        tin_id.text = str(sales_invoice_doc.custom_customer_tin_number)
+        general_tin = buyer_general_tin(customer_doc)
+        tin_id.text = general_tin or require_buyer_field(
+            sales_invoice_doc.custom_customer_tin_number,
+            "Customer TIN number",
+            sales_invoice_doc,
+        )
 
         party_id_brn = ET.SubElement(delivery_party, "cac:PartyIdentification")
         brn_id = ET.SubElement(
             party_id_brn,
             "cbc:ID",
-            schemeID=str(
-                sales_invoice_doc.custom_customer__registrationicpassport_type
-            ),
+            schemeID=require_buyer_field(
+                sales_invoice_doc.custom_customer__registrationicpassport_type,
+                "Customer Registration/IC/Passport Type",
+                sales_invoice_doc,
+                allowed=BUYER_ID_TYPES,
+            ).upper(),
         )
-        brn_id.text = str(
-            sales_invoice_doc.custom_customer_registrationicpassport_number
+        brn_id.text = require_buyer_field(
+            sales_invoice_doc.custom_customer_registrationicpassport_number,
+            "Customer Registration/IC/Passport Number",
+            sales_invoice_doc,
         )
 
         major_version = int(frappe.__version__.split(".")[0])
@@ -750,12 +1000,7 @@ def delivery_data(invoice, sales_invoice_doc):
         country_subentity_code = ET.SubElement(
             postal_address, "cbc:CountrySubentityCode"
         )
-        statecode = (
-            address.custom_state_code.split(":")[0]
-            if address.custom_state_code
-            else "17"
-        )
-        country_subentity_code.text = statecode
+        country_subentity_code.text = state_subentity_code(address)
 
         address_line1 = ET.SubElement(
             ET.SubElement(postal_address, "cac:AddressLine"), "cbc:Line"
@@ -780,12 +1025,16 @@ def delivery_data(invoice, sales_invoice_doc):
             listAgencyID="6",
             listID="ISO3166-1",
         )
-        country_id_code.text = "MYS"
+        country_id_code.text = country_alpha3(address)
 
         party_legal_entity = ET.SubElement(delivery_party, "cac:PartyLegalEntity")
         registration_name = ET.SubElement(party_legal_entity, "cbc:RegistrationName")
         registration_name.text = sales_invoice_doc.customer
         return invoice
+    except frappe.ValidationError:
+        # A frappe.throw() raised inside this block is already a clear,
+        # actionable LHDN message - let it through instead of re-wrapping it.
+        raise
     except Exception as e:
         frappe.throw(_(f"Error in customer_data: {str(e)}"))
         return None
@@ -860,7 +1109,7 @@ def allowance_charge_data(invoice, sales_invoice_doc):
                 amount_1 = ET.SubElement(
                     allowance_charge_1, "cbc:Amount", currencyID=sales_invoice_doc.currency
                 )
-                amount_1.text = str(discount_amount)
+                amount_1.text = money(discount_amount)
 
                 # Second AllowanceCharge with ChargeIndicator = true only use when there shipping like charge
                 # allowance_charge_2 = ET.SubElement(invoice, "cac:AllowanceCharge")
@@ -895,24 +1144,24 @@ def allowance_charge_data(invoice, sales_invoice_doc):
 def tax_total(invoice, sales_invoice_doc):
     """Adds TaxTotal, TaxSubtotal, TaxCategory, and TaxScheme elements to the invoice"""
     try:
-        taxable_amount = sales_invoice_doc.base_total - sales_invoice_doc.get(
-            "base_discount_amount", 0.0
+        taxable_amount = dec(sales_invoice_doc.base_total) - dec(
+            sales_invoice_doc.get("base_discount_amount", 0.0)
         )
         cac_TaxTotal = ET.SubElement(invoice, "cac:TaxTotal")
         taxamnt = ET.SubElement(cac_TaxTotal, "cbc:TaxAmount", currencyID=sales_invoice_doc.currency)
         tax_amount_without_retention = (
-            taxable_amount * float(sales_invoice_doc.taxes[0].rate) / 100
+            taxable_amount * dec(invoice_tax_rate(sales_invoice_doc)) / dec(100)
         )
-        taxamnt.text = f"{abs(round(tax_amount_without_retention, 2)):.2f}"
+        taxamnt.text = money(abs(tax_amount_without_retention))
 
         cac_TaxSubtotal = ET.SubElement(cac_TaxTotal, "cac:TaxSubtotal")
         taxable_amnt = ET.SubElement(
             cac_TaxSubtotal, "cbc:TaxableAmount", currencyID=sales_invoice_doc.currency
         )
-        taxable_amnt.text = str(abs(round(taxable_amount, 2)))
+        taxable_amnt.text = money(abs(taxable_amount))
         TaxAmnt = ET.SubElement(cac_TaxSubtotal, "cbc:TaxAmount", currencyID=sales_invoice_doc.currency)
-        TaxAmnt.text = str(
-            abs(round(taxable_amount * float(sales_invoice_doc.taxes[0].rate) / 100, 2))
+        TaxAmnt.text = money(
+            abs(taxable_amount * dec(invoice_tax_rate(sales_invoice_doc)) / dec(100))
         )
 
         cac_TaxCategory = ET.SubElement(cac_TaxSubtotal, "cac:TaxCategory")
@@ -922,7 +1171,7 @@ def tax_total(invoice, sales_invoice_doc):
         cat_id_val.text = raw_item_id_code.split(":")[0].strip()
         # <cbc:Percent>0.00</cbc:Percent><cbc:TaxExemptionReason>NA</cbc:TaxExemptionReason>
         prct = ET.SubElement(cac_TaxCategory, "cbc:Percent")
-        prct.text = str(sales_invoice_doc.taxes[0].rate)
+        prct.text = str(invoice_tax_rate(sales_invoice_doc))
         exemption = ET.SubElement(cac_TaxCategory, "cbc:TaxExemptionReason")
         if (sales_invoice_doc.custom_malaysia_tax_category) == "E":
             exemption.text = sales_invoice_doc.custom_exemption_code
@@ -990,19 +1239,19 @@ def tax_total_with_template(invoice, sales_invoice_doc):
 
         cac_TaxTotal = ET.SubElement(invoice, "cac:TaxTotal")
         cbc_TaxAmount = ET.SubElement(cac_TaxTotal, "cbc:TaxAmount", currencyID=sales_invoice_doc.currency)
-        cbc_TaxAmount.text = str(tax_amount_without_retention_sar)
+        cbc_TaxAmount.text = money(tax_amount_without_retention_sar)
 
         for malaysia_tax_category, totals in tax_category_totals.items():
             cac_TaxSubtotal = ET.SubElement(cac_TaxTotal, "cac:TaxSubtotal")
             cbc_TaxableAmount = ET.SubElement(
                 cac_TaxSubtotal, "cbc:TaxableAmount", currencyID=sales_invoice_doc.currency
             )
-            cbc_TaxableAmount.text = str(round(totals["taxable_amount"], 2))
+            cbc_TaxableAmount.text = money(totals["taxable_amount"])
 
             cbc_TaxAmount = ET.SubElement(
                 cac_TaxSubtotal, "cbc:TaxAmount", currencyID=sales_invoice_doc.currency
             )
-            cbc_TaxAmount.text = str(round(totals["tax_amount"], 2))
+            cbc_TaxAmount.text = money(totals["tax_amount"])
 
             cac_TaxCategory = ET.SubElement(cac_TaxSubtotal, "cac:TaxCategory")
             cbc_ID = ET.SubElement(cac_TaxCategory, "cbc:ID")
@@ -1036,42 +1285,37 @@ def legal_monetary_total(invoice, sales_invoice_doc):
     """Adds LegalMonetaryTotal elements to the invoice"""
     try:
 
-        taxable_amount_1 = sales_invoice_doc.total - sales_invoice_doc.get(
-            "discount_amount", 0.0
-        )
+        total = dec(sales_invoice_doc.total)
+        discount = dec(sales_invoice_doc.get("discount_amount", 0.0))
+        taxable_amount_1 = total - discount
         tax_amount_without_retention = (
-            taxable_amount_1 * (sales_invoice_doc.taxes[0].rate) / 100
+            taxable_amount_1 * dec(invoice_tax_rate(sales_invoice_doc)) / dec(100)
         )
+        # Round the tax once, then add - matching how the amount is reported in
+        # the TaxTotal block, so the two cannot disagree by a cent.
+        tax_rounded = dec(money(abs(tax_amount_without_retention)))
         legal_monetary_total = ET.SubElement(invoice, "cac:LegalMonetaryTotal")
         line_ext_amnt = ET.SubElement(
             legal_monetary_total, "cbc:LineExtensionAmount", currencyID=sales_invoice_doc.currency
         )
-        line_ext_amnt.text = str(abs(sales_invoice_doc.total))
+        line_ext_amnt.text = money(abs(total))
         tax_exc_ = ET.SubElement(
             legal_monetary_total, "cbc:TaxExclusiveAmount", currencyID=sales_invoice_doc.currency
         )
-        tax_exc_.text = str(
-            abs(sales_invoice_doc.total - sales_invoice_doc.get("discount_amount", 0.0))
-        )
+        tax_exc_.text = money(abs(taxable_amount_1))
         tax_inc = ET.SubElement(
             legal_monetary_total, "cbc:TaxInclusiveAmount", currencyID=sales_invoice_doc.currency
         )
-        tax_inc.text = str(
-            abs(sales_invoice_doc.total - sales_invoice_doc.get("discount_amount", 0.0))
-            + abs(round(tax_amount_without_retention, 2))
-        )
+        tax_inc.text = money(abs(taxable_amount_1) + tax_rounded)
         allw_tot = ET.SubElement(
             legal_monetary_total, "cbc:AllowanceTotalAmount", currencyID=sales_invoice_doc.currency
         )
-        allw_tot.text = str(abs(sales_invoice_doc.get("discount_amount", 0.0)))
+        allw_tot.text = money(abs(discount))
         # <cbc:ChargeTotalAmount currencyID="sales_invoice_doc.currency">1436.50</cbc:ChargeTotalAmount>
         payable_ = ET.SubElement(
             legal_monetary_total, "cbc:PayableAmount", currencyID=sales_invoice_doc.currency
         )
-        payable_.text = str(
-            abs(sales_invoice_doc.total - sales_invoice_doc.get("discount_amount", 0.0))
-            + abs(round(tax_amount_without_retention, 2))
-        )
+        payable_.text = money(abs(taxable_amount_1) + tax_rounded)
         return invoice
     except Exception as e:
         frappe.throw(_(f"Error legal monetary: {str(e)}"))
@@ -1092,6 +1336,7 @@ def get_Tax_for_Item(full_string, item):
 def invoice_line_item(invoice, sales_invoice_doc):
     """Adds InvoiceLine elements to the invoice"""
     try:
+        consolidated_buyer = is_consolidated_buyer(sales_invoice_doc)
         # frappe.msgprint("Entering invoice_line_item function")
         for single_item in sales_invoice_doc.items:
             # frappe.msgprint(f"Processing item: {single_item.item_code}")
@@ -1114,7 +1359,7 @@ def invoice_line_item(invoice, sales_invoice_doc):
             item_line_exte_amnt = ET.SubElement(
                 invoice_line, "cbc:LineExtensionAmount", currencyID=sales_invoice_doc.currency
             )
-            item_line_exte_amnt.text = str(abs(single_item.amount))
+            item_line_exte_amnt.text = money(abs(single_item.amount))
             # frappe.msgprint(f"Set LineExtensionAmount: {item_line_exte_amnt.text}")
 
             discount_amount = abs(single_item.get("discount_amount", 0.0))
@@ -1132,7 +1377,7 @@ def invoice_line_item(invoice, sales_invoice_doc):
                 multi_fac = ET.SubElement(allw_chrge, "cbc:MultiplierFactorNumeric")
                 multi_fac.text = "1"
                 amnt = ET.SubElement(allw_chrge, "cbc:Amount", currencyID=sales_invoice_doc.currency)
-                amnt.text = str(discount_amount)
+                amnt.text = money(discount_amount)
                 # frappe.msgprint(
                 #     f"Added discount elements for item: {single_item.item_code}"
                 # # )
@@ -1141,10 +1386,10 @@ def invoice_line_item(invoice, sales_invoice_doc):
             tax_amount_item = ET.SubElement(
                 tax_total_item, "cbc:TaxAmount", currencyID=sales_invoice_doc.currency
             )
-            tax_amount_item.text = str(
+            tax_amount_item.text = money(
                 abs(
                     round(
-                        (sales_invoice_doc.taxes[0].rate) * single_item.amount / 100, 2
+                        invoice_tax_rate(sales_invoice_doc) * single_item.amount / 100, 2
                     )
                 )
             )
@@ -1154,12 +1399,12 @@ def invoice_line_item(invoice, sales_invoice_doc):
             taxable_amnt_item = ET.SubElement(
                 tax_subtot_item, "cbc:TaxableAmount", currencyID=sales_invoice_doc.currency
             )
-            taxable_amnt_item.text = str(abs(single_item.amount - discount_amount))
+            taxable_amnt_item.text = money(abs(single_item.amount - discount_amount))
             tax_amnt = ET.SubElement(tax_subtot_item, "cbc:TaxAmount", currencyID=sales_invoice_doc.currency)
-            tax_amnt.text = str(
+            tax_amnt.text = money(
                 abs(
                     round(
-                        (sales_invoice_doc.taxes[0].rate) * single_item.amount / 100, 2
+                        invoice_tax_rate(sales_invoice_doc) * single_item.amount / 100, 2
                     )
                 )
             )
@@ -1174,7 +1419,7 @@ def invoice_line_item(invoice, sales_invoice_doc):
             cat_item_id.text = raw_invoice_type_code.split(":")[0].strip()
             # cat_item_id.text = str(sales_invoice_doc.custom_malaysia_tax_category)
             item_prct = ET.SubElement(tax_cate_item, "cbc:Percent")
-            item_prct.text = str(sales_invoice_doc.taxes[0].rate)
+            item_prct.text = str(invoice_tax_rate(sales_invoice_doc))
             # frappe.msgprint(
             #     f"Set tax category: ID={cat_item_id.text}, Percent={item_prct.text}"
             # # )
@@ -1187,16 +1432,7 @@ def invoice_line_item(invoice, sales_invoice_doc):
 
             item_data = ET.SubElement(invoice_line, "cac:Item")
             descp_item = ET.SubElement(item_data, "cbc:Description")
-            # descp_item.text = str(single_item.description)
-            desc = ""
-            if single_item.description and single_item.item_name:
-                desc = f"{single_item.description} - {single_item.item_name}"
-            elif single_item.description:
-                desc = str(single_item.description)
-            elif single_item.item_name:
-                desc = str(single_item.item_name)
-
-            descp_item.text = desc
+            descp_item.text = item_description(single_item)
             # if single_item.description:
             #     descp_item.text = str(single_item.description)
             # else:
@@ -1209,9 +1445,9 @@ def invoice_line_item(invoice, sales_invoice_doc):
             )
             # item_doc = frappe.get_doc("Item", single_item.item_name)
 
-            classification_code = str(
-                single_item.custom_item_classification_codes
-            ).split(":")[0]
+            classification_code = item_classification_code(
+                single_item, consolidated_buyer
+            )
             item_class_cod.text = classification_code
             # frappe.msgprint(f"Set classification code: {item_class_cod.text}")
 
@@ -1219,16 +1455,19 @@ def invoice_line_item(invoice, sales_invoice_doc):
             pri_amnt_item = ET.SubElement(
                 price_item, "cbc:PriceAmount", currencyID=sales_invoice_doc.currency
             )
-            pri_amnt_item.text = str(abs((single_item.base_rate) - discount_amount))
+            pri_amnt_item.text = money(abs((single_item.base_rate) - discount_amount))
             # frappe.msgprint(f"Set price amount: {pri_amnt_item.text}")
 
             item_pri_ext = ET.SubElement(invoice_line, "cac:ItemPriceExtension")
             item_val_amnt = ET.SubElement(item_pri_ext, "cbc:Amount", currencyID=sales_invoice_doc.currency)
-            item_val_amnt.text = str(abs(single_item.base_amount))
+            item_val_amnt.text = money(abs(single_item.base_amount))
             # frappe.msgprint(f"Set item price extension: {item_val_amnt.text}")
 
         # frappe.msgprint("Completed processing all items")
         return invoice
+    except frappe.ValidationError:
+        # already a clear, actionable LHDN message - do not re-wrap it
+        raise
     except Exception as e:
         frappe.throw(_(f"Error in invoice_line_item: {str(e)}"))
 
@@ -1237,6 +1476,7 @@ def item_data_with_template(invoice, sales_invoice_doc):
     """Adds InvoiceLine elements to the invoice"""
 
     try:
+        consolidated_buyer = is_consolidated_buyer(sales_invoice_doc)
         for single_item in sales_invoice_doc.items:
             item_tax_template = frappe.get_doc(
                 "Item Tax Template", single_item.item_tax_template
@@ -1254,7 +1494,7 @@ def item_data_with_template(invoice, sales_invoice_doc):
             cbc_LineExtensionAmount = ET.SubElement(
                 cac_InvoiceLine, "cbc:LineExtensionAmount", currencyID=sales_invoice_doc.currency
             )
-            cbc_LineExtensionAmount.text = str(abs(single_item.amount))
+            cbc_LineExtensionAmount.text = money(abs(single_item.amount))
 
             discount_amount = abs(single_item.get("discount_amount", 0.0))
             if discount_amount > 0:
@@ -1276,13 +1516,13 @@ def item_data_with_template(invoice, sales_invoice_doc):
                 cbc_Amount = ET.SubElement(
                     cac_AllowanceCharge, "cbc:Amount", currencyID=sales_invoice_doc.currency
                 )
-                cbc_Amount.text = str(discount_amount)
+                cbc_Amount.text = money(discount_amount)
 
             cac_TaxTotal = ET.SubElement(cac_InvoiceLine, "cac:TaxTotal")
             cbc_TaxAmount = ET.SubElement(
                 cac_TaxTotal, "cbc:TaxAmount", currencyID=sales_invoice_doc.currency
             )
-            cbc_TaxAmount.text = str(
+            cbc_TaxAmount.text = money(
                 abs(round(item_tax_percentage * single_item.amount / 100, 2))
             )
 
@@ -1290,11 +1530,11 @@ def item_data_with_template(invoice, sales_invoice_doc):
             cbc_TaxableAmount = ET.SubElement(
                 cac_TaxSubtotal, "cbc:TaxableAmount", currencyID=sales_invoice_doc.currency
             )
-            cbc_TaxableAmount.text = str(abs(single_item.amount - discount_amount))
+            cbc_TaxableAmount.text = money(abs(single_item.amount - discount_amount))
             cbc_TaxAmount = ET.SubElement(
                 cac_TaxSubtotal, "cbc:TaxAmount", currencyID=sales_invoice_doc.currency
             )
-            cbc_TaxAmount.text = str(
+            cbc_TaxAmount.text = money(
                 abs(round(item_tax_percentage * single_item.amount / 100, 2))
             )
 
@@ -1312,15 +1552,7 @@ def item_data_with_template(invoice, sales_invoice_doc):
 
             cac_Item = ET.SubElement(cac_InvoiceLine, "cac:Item")
             cbc_Description = ET.SubElement(cac_Item, "cbc:Description")
-            # cbc_Description.text = str(single_item.description)
-            if single_item.description and single_item.item_name:
-                cbc_Description.text = (
-                    f"{single_item.description} - {single_item.item_name}"
-                )
-            elif single_item.description:
-                cbc_Description.text = str(single_item.description)
-            elif single_item.item_name:
-                cbc_Description.text = str(single_item.item_name)
+            cbc_Description.text = item_description(single_item)
 
             cac_CommodityClassification = ET.SubElement(
                 cac_Item, "cac:CommodityClassification"
@@ -1334,16 +1566,16 @@ def item_data_with_template(invoice, sales_invoice_doc):
             # item_doc = frappe.get_doc(
             #     "Item", single_item.item_code
             # )  # Example for Frappe framework
-            classification_code = str(
-                single_item.custom_item_classification_codes
-            ).split(":")[0]
+            classification_code = item_classification_code(
+                single_item, consolidated_buyer
+            )
             cbc_ItemClassificationCode.text = classification_code
 
             cac_Price = ET.SubElement(cac_InvoiceLine, "cac:Price")
             cbc_PriceAmount = ET.SubElement(
                 cac_Price, "cbc:PriceAmount", currencyID=sales_invoice_doc.currency
             )
-            cbc_PriceAmount.text = str(
+            cbc_PriceAmount.text = money(
                 abs((single_item.base_price_list_rate) - discount_amount)
             )
 
@@ -1353,8 +1585,11 @@ def item_data_with_template(invoice, sales_invoice_doc):
             cbc_Amount = ET.SubElement(
                 cac_ItemPriceExtension, "cbc:Amount", currencyID=sales_invoice_doc.currency
             )
-            cbc_Amount.text = str(abs(single_item.base_amount))
+            cbc_Amount.text = money(abs(single_item.base_amount))
         return invoice
+    except frappe.ValidationError:
+        # already a clear, actionable LHDN message - do not re-wrap it
+        raise
     except Exception as e:
         frappe.throw(_(f"Error in invoice_line item template: {str(e)}"))
         return None

@@ -2,7 +2,7 @@
 frappe.ui.form.on('LHDN Success Log', {
     refresh: function(frm) {
         // Add the custom button
-        frm.add_custom_button(__('Get Status of SubmittedDoc'), function() {
+        frm.add_custom_button(__('Check Status'), function() {
             // Call the backend method to get the status
             frappe.call({
                 method: "myinvois_erpgulf.myinvois_erpgulf.original.status_submit_success_log",

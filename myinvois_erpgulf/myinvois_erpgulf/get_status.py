@@ -9,7 +9,7 @@ from myinvois_erpgulf.myinvois_erpgulf.original import get_api_url
 from myinvois_erpgulf.myinvois_erpgulf.taxpayerlogin import get_access_token
 from myinvois_erpgulf.myinvois_erpgulf.createxml import generate_qr_code, attach_qr_code_to_sales_invoice
 
-@frappe.whitelist(allow_guest=True)
+@frappe.whitelist(allow_guest=False)
 def status_submit(doc):
     """
     Fetch submission status from LHDN API and update the corresponding Sales or Purchase Invoice.

@@ -1,0 +1,423 @@
+{
+ "actions": [],
+ "allow_rename": 1,
+ "autoname": "naming_series:",
+ "creation": "2026-09-01 02:10:00.904865",
+ "description": "A consolidated e-Invoice reported to LHDN. It is a reporting document only - the revenue is already booked on the source Sales Invoices, so this doctype never touches the general ledger.",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "naming_series",
+  "company",
+  "customer",
+  "col_1",
+  "posting_date",
+  "due_date",
+  "from_date",
+  "to_date",
+  "sec_cur",
+  "currency",
+  "col_2",
+  "conversion_rate",
+  "sec_items",
+  "items",
+  "sec_tax",
+  "taxes",
+  "sec_tot",
+  "total",
+  "net_total",
+  "discount_amount",
+  "col_3",
+  "base_total",
+  "base_discount_amount",
+  "grand_total",
+  "base_grand_total",
+  "sec_lhdn",
+  "custom_is_submit_to_lhdn",
+  "custom_is_consolidated_invoice",
+  "custom_malaysia_tax_category",
+  "custom_invoicetype_code",
+  "custom_exemption_code",
+  "custom_payment_mode",
+  "col_4",
+  "custom_lhdn_status",
+  "custom_submission_time",
+  "custom_einvoice_qr",
+  "custom_submit_response",
+  "sec_buyer",
+  "custom_customer_tin_number",
+  "custom_customer__registrationicpassport_type",
+  "custom_customer_registrationicpassport_number",
+  "col_5",
+  "customer_address",
+  "shipping_address_name",
+  "is_return",
+  "is_debit_note",
+  "return_against",
+  "custom_is_return_refund",
+  "amended_from",
+  "amended_from"
+ ],
+ "fields": [
+  {
+   "default": "CINV.YY..MM./.#####",
+   "fieldname": "naming_series",
+   "fieldtype": "Select",
+   "label": "Series",
+   "options": "CINV.YY..MM./.#####",
+   "reqd": 1
+  },
+  {
+   "fieldname": "company",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Company",
+   "options": "Company",
+   "reqd": 1
+  },
+  {
+   "description": "The General Public account. Its Buyer Type drives the Appendix 2 buyer block.",
+   "fieldname": "customer",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Customer",
+   "options": "Customer",
+   "reqd": 1
+  },
+  {
+   "fieldname": "col_1",
+   "fieldtype": "Column Break"
+  },
+  {
+   "default": "Today",
+   "fieldname": "posting_date",
+   "fieldtype": "Date",
+   "in_list_view": 1,
+   "label": "Posting Date",
+   "reqd": 1
+  },
+  {
+   "fieldname": "due_date",
+   "fieldtype": "Date",
+   "label": "Due Date"
+  },
+  {
+   "fieldname": "from_date",
+   "fieldtype": "Date",
+   "label": "Period From"
+  },
+  {
+   "fieldname": "to_date",
+   "fieldtype": "Date",
+   "label": "Period To"
+  },
+  {
+   "fieldname": "sec_cur",
+   "fieldtype": "Section Break",
+   "label": "Currency"
+  },
+  {
+   "fieldname": "currency",
+   "fieldtype": "Link",
+   "label": "Currency",
+   "options": "Currency",
+   "reqd": 1
+  },
+  {
+   "fieldname": "col_2",
+   "fieldtype": "Column Break"
+  },
+  {
+   "default": "1",
+   "fieldname": "conversion_rate",
+   "fieldtype": "Float",
+   "label": "Exchange Rate"
+  },
+  {
+   "fieldname": "sec_items",
+   "fieldtype": "Section Break",
+   "label": "Items"
+  },
+  {
+   "fieldname": "items",
+   "fieldtype": "Table",
+   "label": "Items",
+   "options": "Consolidated e-Invoice Item",
+   "reqd": 1
+  },
+  {
+   "fieldname": "sec_tax",
+   "fieldtype": "Section Break",
+   "label": "Taxes"
+  },
+  {
+   "fieldname": "taxes",
+   "fieldtype": "Table",
+   "label": "Sales Taxes and Charges",
+   "options": "Sales Taxes and Charges"
+  },
+  {
+   "fieldname": "sec_tot",
+   "fieldtype": "Section Break",
+   "label": "Totals"
+  },
+  {
+   "fieldname": "total",
+   "fieldtype": "Currency",
+   "label": "Total",
+   "read_only": 1
+  },
+  {
+   "fieldname": "net_total",
+   "fieldtype": "Currency",
+   "label": "Net Total",
+   "read_only": 1
+  },
+  {
+   "fieldname": "discount_amount",
+   "fieldtype": "Currency",
+   "label": "Discount Amount"
+  },
+  {
+   "fieldname": "col_3",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "base_total",
+   "fieldtype": "Currency",
+   "label": "Total (Company Currency)",
+   "read_only": 1
+  },
+  {
+   "fieldname": "base_discount_amount",
+   "fieldtype": "Currency",
+   "label": "Discount Amount (Company Currency)"
+  },
+  {
+   "fieldname": "grand_total",
+   "fieldtype": "Currency",
+   "in_list_view": 1,
+   "label": "Grand Total",
+   "read_only": 1
+  },
+  {
+   "fieldname": "base_grand_total",
+   "fieldtype": "Currency",
+   "label": "Grand Total (Company Currency)",
+   "read_only": 1
+  },
+  {
+   "fieldname": "sec_lhdn",
+   "fieldtype": "Section Break",
+   "label": "LHDN e-Invoice"
+  },
+  {
+   "default": "1",
+   "fieldname": "custom_is_submit_to_lhdn",
+   "fieldtype": "Check",
+   "label": "Is submit to LHDN"
+  },
+  {
+   "default": "1",
+   "fieldname": "custom_is_consolidated_invoice",
+   "fieldtype": "Check",
+   "label": "Is Consolidated Invoice",
+   "read_only": 1
+  },
+  {
+   "fieldname": "custom_malaysia_tax_category",
+   "fieldtype": "Select",
+   "label": "Malaysia Tax Category",
+   "options": "01 : Sales Tax\n02 : Service Tax\n03 :  Tourism Tax\n04 :  High-Value Goods Tax\n05 : Sales Tax on Low Value Goods\n06  : Not Applicable\nE  : Tax exemption (where applicable)"
+  },
+  {
+   "fieldname": "custom_invoicetype_code",
+   "fieldtype": "Select",
+   "label": "Invoice Type Code",
+   "options": "01 :  Invoice\n02 : Credit Note\n03 :  Debit Note\n04 :  Refund Note"
+  },
+  {
+   "fieldname": "custom_exemption_code",
+   "fieldtype": "Data",
+   "label": "Tax Exemption Reason"
+  },
+  {
+   "fieldname": "custom_payment_mode",
+   "fieldtype": "Data",
+   "label": "Payment Mode"
+  },
+  {
+   "fieldname": "col_4",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "custom_lhdn_status",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "LHDN Status",
+   "read_only": 1
+  },
+  {
+   "fieldname": "custom_submission_time",
+   "fieldtype": "Data",
+   "label": "Submission Time",
+   "read_only": 1
+  },
+  {
+   "fieldname": "custom_einvoice_qr",
+   "fieldtype": "Attach Image",
+   "label": "e-Invoice QR",
+   "read_only": 1
+  },
+  {
+   "fieldname": "custom_submit_response",
+   "fieldtype": "Code",
+   "label": "LHDN Response",
+   "options": "JSON",
+   "read_only": 1
+  },
+  {
+   "collapsible": 1,
+   "fieldname": "sec_buyer",
+   "fieldtype": "Section Break",
+   "label": "Buyer Identifiers"
+  },
+  {
+   "fetch_from": "customer.custom_customer_tin_number",
+   "fieldname": "custom_customer_tin_number",
+   "fieldtype": "Data",
+   "label": "Customer TIN number",
+   "read_only": 1
+  },
+  {
+   "fieldname": "custom_customer__registrationicpassport_type",
+   "fieldtype": "Data",
+   "label": "Registration/IC/Passport Type",
+   "read_only": 1
+  },
+  {
+   "fieldname": "custom_customer_registrationicpassport_number",
+   "fieldtype": "Data",
+   "label": "Registration/IC/Passport Number",
+   "read_only": 1
+  },
+  {
+   "fieldname": "col_5",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "customer_address",
+   "fieldtype": "Link",
+   "label": "Customer Address",
+   "options": "Address"
+  },
+  {
+   "fieldname": "shipping_address_name",
+   "fieldtype": "Link",
+   "label": "Shipping Address",
+   "options": "Address"
+  },
+  {
+   "default": "0",
+   "fieldname": "is_return",
+   "fieldtype": "Check",
+   "hidden": 1,
+   "label": "Is Return"
+  },
+  {
+   "default": "0",
+   "fieldname": "is_debit_note",
+   "fieldtype": "Check",
+   "hidden": 1,
+   "label": "Is Debit Note"
+  },
+  {
+   "fieldname": "return_against",
+   "fieldtype": "Data",
+   "hidden": 1,
+   "label": "Return Against"
+  },
+  {
+   "default": "0",
+   "fieldname": "custom_is_return_refund",
+   "fieldtype": "Check",
+   "hidden": 1,
+   "label": "Is Return Refund"
+  },
+  {
+   "fieldname": "amended_from",
+   "fieldtype": "Link",
+   "label": "Amended From",
+   "no_copy": 1,
+   "options": "Consolidated e-Invoice",
+   "print_hide": 1,
+   "read_only": 1
+  },
+  {
+   "fieldname": "amended_from",
+   "fieldtype": "Link",
+   "label": "Amended From",
+   "no_copy": 1,
+   "options": "Consolidated e-Invoice",
+   "print_hide": 1,
+   "read_only": 1,
+   "search_index": 1
+  }
+ ],
+ "index_web_pages_for_search": 1,
+ "is_submittable": 1,
+ "links": [],
+ "modified": "2026-09-01 02:10:00.904865",
+ "modified_by": "Administrator",
+ "module": "Myinvois Erpgulf",
+ "name": "Consolidated e-Invoice",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "cancel": 1,
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "submit": 1,
+   "write": 1
+  },
+  {
+   "cancel": 1,
+   "create": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "Accounts Manager",
+   "share": 1,
+   "submit": 1,
+   "write": 1
+  },
+  {
+   "cancel": 1,
+   "create": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "Accounts User",
+   "share": 1,
+   "submit": 1,
+   "write": 1
+  }
+ ],
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": [],
+ "title_field": "customer",
+ "track_changes": 1
+}

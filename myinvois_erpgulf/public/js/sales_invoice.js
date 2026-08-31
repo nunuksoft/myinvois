@@ -23,8 +23,21 @@ frappe.ui.form.on('Sales Invoice', {
             }
         }
 
+        // A document LHDN validated as Invalid cannot be corrected in place - it
+        // has to go up as a new submission. The checks above only look at whether
+        // the *submission* was accepted, so a document that was accepted and then
+        // failed validation would otherwise leave no way to resubmit.
+        let lhdn_status = (frm.doc.custom_lhdn_status || '').trim().toLowerCase();
+        let needs_resubmit = ['invalid', 'failed', 'rejected'].includes(lhdn_status);
+        if (needs_resubmit) {
+            should_show_button = true;
+        }
+
         if (should_show_button && frm.doc.custom_is_submit_to_lhdn == 1) {
-            frm.add_custom_button(__('Submit Invoice To LHDN'), function () {
+            let button_label = needs_resubmit
+                ? __('Resubmit to LHDN')
+                : __('Submit to LHDN');
+            frm.add_custom_button(button_label, function () {
                 // Show loading overlay
                 show_loading_overlay();
 
@@ -80,7 +93,7 @@ function hide_loading_overlay() {
 frappe.ui.form.on('Sales Invoice', { 
     refresh: function(frm) {
         // Add the custom button
-        frm.add_custom_button(__('Get Status of SubmittedDoc'), function() {
+        frm.add_custom_button(__('Check Status'), function() {
             // Call the backend method to get the status
             frappe.call({
                 method: "myinvois_erpgulf.myinvois_erpgulf.get_status.status_submit",

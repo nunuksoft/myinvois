@@ -22,6 +22,7 @@ from cryptography.hazmat.backends import default_backend
 from cryptography.hazmat.primitives import hashes, serialization
 from myinvois_erpgulf.myinvois_erpgulf.consolidate_invoice import (
     customer_data_consolidate,
+    is_consolidated_buyer,
     delivery_data_consolidate,
 )
 from myinvois_erpgulf.myinvois_erpgulf.createxml import (
@@ -42,7 +43,10 @@ from myinvois_erpgulf.myinvois_erpgulf.createxml import (
     generate_qr_code,
     attach_qr_code_to_sales_invoice,
 )
-from myinvois_erpgulf.myinvois_erpgulf.taxpayerlogin import get_access_token
+from myinvois_erpgulf.myinvois_erpgulf.taxpayerlogin import (
+    get_access_token,
+    lhdn_headers,
+)
 from frappe import _
 
 
@@ -399,10 +403,7 @@ def submission_url(sales_invoice_doc, company_abbr):
             ]
         }
 
-        headers = {
-            "Authorization": f"Bearer {token}",
-            "Content-Type": "application/json",
-        }
+        headers = lhdn_headers(company_doc, token, content_type="application/json")
 
         # Function to send the submission request
         def submit_request():
@@ -718,7 +719,7 @@ def error_log(custom_error_submission=None):
 #         frappe.throw(_(f"Error during status submission: {str(e)}"))
 
 
-def status_submission(invoice_number, sales_invoice_doc, company_abbr):
+def status_submission(invoice_number, sales_invoice_doc, company_abbr, doctype="Sales Invoice"):
     """Fetching the status of the submission"""
     try:
         # frappe.throw("hi")
@@ -732,7 +733,7 @@ def status_submission(invoice_number, sales_invoice_doc, company_abbr):
         # Case: No submission UID
         if not submission_uid:
             if isinstance(sales_invoice_doc, dict):
-                sales_invoice_doc = frappe.get_doc("Sales Invoice", invoice_number)
+                sales_invoice_doc = frappe.get_doc(doctype, invoice_number)
 
             sales_invoice_doc.custom_lhdn_status = "Failed"
             sales_invoice_doc.save(ignore_permissions=True)
@@ -810,7 +811,7 @@ def status_submission(invoice_number, sales_invoice_doc, company_abbr):
         frappe.throw(_(f"Error during status submission: {str(e)}"))
 
 
-@frappe.whitelist(allow_guest=True)
+@frappe.whitelist(allow_guest=False)
 def status_submit_success_log(doc):
     """Defining the status submit success log"""
 
@@ -875,16 +876,20 @@ def status_submit_success_log(doc):
         frappe.log_error(_(f"Error during status submission: {str(e)}"))
 
 
-def validate_before(invoice_number, any_item_has_tax_template=False):
-    """this function validates the invoice before submission"""
+def validate_before(invoice_number, any_item_has_tax_template=False, doctype="Sales Invoice"):
+    """this function validates the invoice before submission
+
+    The LHDN flow also serves Consolidated e-Invoice, which mirrors the Sales
+    Invoice field names the XML builders read. The doctype defaults to Sales
+    Invoice so every existing caller is unaffected.
+    """
     try:
-        sales_invoice_doc = frappe.get_doc("Sales Invoice", invoice_number)
-        if sales_invoice_doc.get("custom_is_consolidated_invoice"):
-            # Stop GL and ledger impact
-            sales_invoice_doc.flags.ignore_accounting_impact = True
-            sales_invoice_doc.db_set("status", "Consolidated")
-            sales_invoice_doc.db_set("outstanding_amount", 0.0)
-            sales_invoice_doc.save(ignore_permissions=True)
+        sales_invoice_doc = frappe.get_doc(doctype, invoice_number)
+        # A consolidated e-Invoice stays a draft (see merge_sales_invoices), so
+        # there is no GL or ledger impact to suppress here. The old code set
+        # flags.ignore_accounting_impact - which neither Frappe nor ERPNext
+        # defines - and wrote the status "Consolidated", which is not one of
+        # the Sales Invoice status options, via db_set to bypass validation.
         # Check if any item has a tax template but not all items have one
         company_name = sales_invoice_doc.company
         settings = frappe.get_doc("Company", company_name)
@@ -912,12 +917,12 @@ def validate_before(invoice_number, any_item_has_tax_template=False):
             invoice = company_data(invoice, sales_invoice_doc)
 
             customer_doc = frappe.get_doc("Customer", sales_invoice_doc.customer)
-            if customer_doc.customer_name != "General Public":
+            if not is_consolidated_buyer(sales_invoice_doc, customer_doc):
                 invoice = customer_data(invoice, sales_invoice_doc)
             else:
                 invoice = customer_data_consolidate(invoice, sales_invoice_doc)
 
-            if customer_doc.customer_name != "General Public":
+            if not is_consolidated_buyer(sales_invoice_doc, customer_doc):
                 invoice = delivery_data(invoice, sales_invoice_doc)
             else:
                 invoice = delivery_data_consolidate(invoice, sales_invoice_doc)
@@ -984,12 +989,12 @@ def validate_before(invoice_number, any_item_has_tax_template=False):
             invoice = company_data(invoice, sales_invoice_doc)
 
             customer_doc = frappe.get_doc("Customer", sales_invoice_doc.customer)
-            if customer_doc.customer_name != "General Public":
+            if not is_consolidated_buyer(sales_invoice_doc, customer_doc):
                 invoice = customer_data(invoice, sales_invoice_doc)
             else:
                 invoice = customer_data_consolidate(invoice, sales_invoice_doc)
 
-            if customer_doc.customer_name != "General Public":
+            if not is_consolidated_buyer(sales_invoice_doc, customer_doc):
                 invoice = delivery_data(invoice, sales_invoice_doc)
             else:
                 invoice = delivery_data_consolidate(invoice, sales_invoice_doc)
@@ -1034,22 +1039,37 @@ def validate_before(invoice_number, any_item_has_tax_template=False):
 
 def validate_before_submit(doc, method=None):
     """validating the invoice before submission"""
-    # frappe.throw(f"Triggered submit_document for {doc.name}")
+    if doc.get("custom_is_consolidated_invoice"):
+        # These documents exist only to carry a payload to LHDN - the revenue
+        # is already booked on the source invoices. Submitting one would run
+        # Sales Invoice on_submit -> make_gl_entries and double-count it, so
+        # block the transition rather than trying to unwind it afterwards.
+        frappe.throw(
+            _(
+                "{0} is a consolidated e-Invoice. It is a reporting document for"
+                " LHDN and must stay a draft - submitting it would post a second"
+                " set of ledger entries for revenue already booked on the source"
+                " invoices."
+            ).format(doc.name)
+        )
     validate_before(doc.name)
 import traceback
 
 
-@frappe.whitelist(allow_guest=True)
-def submit_document(invoice_number, any_item_has_tax_template=False):
-    """defining the submit document"""
+@frappe.whitelist(allow_guest=False)
+def submit_document(invoice_number, any_item_has_tax_template=False, doctype="Sales Invoice"):
+    """defining the submit document
+
+    The LHDN flow also serves Consolidated e-Invoice, which mirrors the Sales
+    Invoice field names the XML builders read. The doctype defaults to Sales
+    Invoice so every existing caller is unaffected.
+    """
     try:
-        sales_invoice_doc = frappe.get_doc("Sales Invoice", invoice_number)
+        sales_invoice_doc = frappe.get_doc(doctype, invoice_number)
         company_name = sales_invoice_doc.company
         settings = frappe.get_doc("Company", company_name)
         company_abbr = settings.abbr
         company_doc = frappe.get_doc("Company", {"abbr": company_abbr})
-        if sales_invoice_doc.get("custom_is_consolidated_invoice"):
-            sales_invoice_doc.flags.ignore_accounting_impact = True
         # frappe.throw(f"Fetched from DB: {sales_invoice_doc}")
         # Check if any item has a tax template but not all items have one
         if any(item.item_tax_template for item in sales_invoice_doc.items) and not all(
@@ -1075,12 +1095,12 @@ def submit_document(invoice_number, any_item_has_tax_template=False):
                 # if company_doc != "General Public":
                 invoice = company_data(invoice, sales_invoice_doc)
                 customer_doc = frappe.get_doc("Customer", sales_invoice_doc.customer)
-                if customer_doc.customer_name != "General Public":
+                if not is_consolidated_buyer(sales_invoice_doc, customer_doc):
                     invoice = customer_data(invoice, sales_invoice_doc)
                 else:
                     invoice = customer_data_consolidate(invoice, sales_invoice_doc)
 
-                if customer_doc.customer_name != "General Public":
+                if not is_consolidated_buyer(sales_invoice_doc, customer_doc):
                     invoice = delivery_data(invoice, sales_invoice_doc)
                 else:
                     invoice = delivery_data_consolidate(invoice, sales_invoice_doc)
@@ -1136,7 +1156,9 @@ def submit_document(invoice_number, any_item_has_tax_template=False):
                 
                 if submission_uid:
     # Update the status safely
-                    status = status_submission(invoice_number, sales_invoice_doc, company_abbr)
+                    status = status_submission(
+                        invoice_number, sales_invoice_doc, company_abbr, doctype
+                    )
                     qr_image_path = generate_qr_code(sales_invoice_doc, status)
                     if not qr_image_path or not os.path.exists(qr_image_path):
                         frappe.log_error(
@@ -1164,12 +1186,12 @@ def submit_document(invoice_number, any_item_has_tax_template=False):
                 # if company_doc != "General Public":
                 invoice = company_data(invoice, sales_invoice_doc)
                 customer_doc = frappe.get_doc("Customer", sales_invoice_doc.customer)
-                if customer_doc.customer_name != "General Public":
+                if not is_consolidated_buyer(sales_invoice_doc, customer_doc):
                     invoice = customer_data(invoice, sales_invoice_doc)
                 else:
                     invoice = customer_data_consolidate(invoice, sales_invoice_doc)
 
-                if customer_doc.customer_name != "General Public":
+                if not is_consolidated_buyer(sales_invoice_doc, customer_doc):
                     invoice = delivery_data(invoice, sales_invoice_doc)
                 else:
                     invoice = delivery_data_consolidate(invoice, sales_invoice_doc)
@@ -1209,7 +1231,9 @@ def submit_document(invoice_number, any_item_has_tax_template=False):
                     frappe.throw(_(f"LHDN submission failed: {detail}"))
                 # else:
                 else:
-                    status= status_submission(invoice_number, sales_invoice_doc, company_abbr)
+                    status = status_submission(
+                        invoice_number, sales_invoice_doc, company_abbr, doctype
+                    )
                     qr_image_path = generate_qr_code(sales_invoice_doc, status)
                     if not qr_image_path or not os.path.exists(qr_image_path):
                         frappe.log_error(

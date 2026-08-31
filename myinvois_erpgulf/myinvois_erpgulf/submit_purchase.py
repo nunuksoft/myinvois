@@ -38,7 +38,10 @@ from myinvois_erpgulf.myinvois_erpgulf.purchase_invoice import (
     generate_qr_code,
     attach_qr_code_to_sales_invoice,
 )
-from myinvois_erpgulf.myinvois_erpgulf.taxpayerlogin import get_access_token
+from myinvois_erpgulf.myinvois_erpgulf.taxpayerlogin import (
+    get_access_token,
+    lhdn_headers,
+)
 from frappe import _
 
 
@@ -366,10 +369,7 @@ def submission_url(sales_invoice_doc, company_abbr):
             ]
         }
 
-        headers = {
-            "Authorization": f"Bearer {token}",
-            "Content-Type": "application/json",
-        }
+        headers = lhdn_headers(company_doc, token, content_type="application/json")
 
         # Function to send the submission request
         def submit_request():
@@ -673,7 +673,7 @@ def status_submission(invoice_number, sales_invoice_doc, company_abbr):
         frappe.throw(_(f"Error during status submission: {str(e)}"))
 
 
-@frappe.whitelist(allow_guest=True)
+@frappe.whitelist(allow_guest=False)
 def status_submit_success_log(doc):
     """Defining the status submit success log"""
 
@@ -737,9 +737,12 @@ def status_submit_success_log(doc):
         frappe.log_error(_(f"Error during status submission: {str(e)}"))
 
 
-@frappe.whitelist(allow_guest=True)
 def validate_before(invoice_number, any_item_has_tax_template=False):
-    """this function validates the invoice before submission"""
+    """this function validates the invoice before submission
+
+    Not whitelisted: it is called only by validate_before_submit in this
+    module, and original.py's equivalent is not exposed either.
+    """
     # frappe.throw("hi")
     try:
         sales_invoice_doc = frappe.get_doc("Purchase Invoice", invoice_number)
@@ -887,7 +890,7 @@ def validate_before_submit(doc, method=None):
     validate_before(doc.name)
 
 
-@frappe.whitelist(allow_guest=True)
+@frappe.whitelist(allow_guest=False)
 def submit_document(invoice_number, any_item_has_tax_template=False):
     """defining the submit document"""
     try:

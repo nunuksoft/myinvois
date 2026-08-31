@@ -9,6 +9,7 @@ import pyqrcode
 from frappe import _
 import requests
 from myinvois_erpgulf.myinvois_erpgulf.taxpayerlogin import get_access_token
+from myinvois_erpgulf.myinvois_erpgulf.createxml import invoice_tax_rate
 
 
 def get_icv_code(invoice_number):
@@ -734,7 +735,7 @@ def tax_total(invoice, sales_invoice_doc):
         cac_TaxTotal = ET.SubElement(invoice, "cac:TaxTotal")
         taxamnt = ET.SubElement(cac_TaxTotal, "cbc:TaxAmount", currencyID=sales_invoice_doc.currency)
         tax_amount_without_retention = (
-            taxable_amount * float(sales_invoice_doc.taxes[0].rate) / 100
+            taxable_amount * invoice_tax_rate(sales_invoice_doc) / 100
         )
         taxamnt.text = f"{abs(round(tax_amount_without_retention, 2)):.2f}"
 
@@ -745,7 +746,7 @@ def tax_total(invoice, sales_invoice_doc):
         taxable_amnt.text = str(abs(round(taxable_amount, 2)))
         TaxAmnt = ET.SubElement(cac_TaxSubtotal, "cbc:TaxAmount", currencyID=sales_invoice_doc.currency)
         TaxAmnt.text = str(
-            abs(round(taxable_amount * float(sales_invoice_doc.taxes[0].rate) / 100, 2))
+            abs(round(taxable_amount * invoice_tax_rate(sales_invoice_doc) / 100, 2))
         )
 
         cac_TaxCategory = ET.SubElement(cac_TaxSubtotal, "cac:TaxCategory")
@@ -755,7 +756,7 @@ def tax_total(invoice, sales_invoice_doc):
         cat_id_val.text = raw_item_id_code.split(":")[0].strip()
         # <cbc:Percent>0.00</cbc:Percent><cbc:TaxExemptionReason>NA</cbc:TaxExemptionReason>
         prct = ET.SubElement(cac_TaxCategory, "cbc:Percent")
-        prct.text = str(sales_invoice_doc.taxes[0].rate)
+        prct.text = str(invoice_tax_rate(sales_invoice_doc))
         exemption = ET.SubElement(cac_TaxCategory, "cbc:TaxExemptionReason")
         if (sales_invoice_doc.custom_malaysia_tax_category) == "E":
             exemption.text = sales_invoice_doc.custom_exemption_code
@@ -873,7 +874,7 @@ def legal_monetary_total(invoice, sales_invoice_doc):
             "discount_amount", 0.0
         )
         tax_amount_without_retention = (
-            taxable_amount_1 * (sales_invoice_doc.taxes[0].rate) / 100
+            taxable_amount_1 * invoice_tax_rate(sales_invoice_doc) / 100
         )
         legal_monetary_total = ET.SubElement(invoice, "cac:LegalMonetaryTotal")
         line_ext_amnt = ET.SubElement(
@@ -977,7 +978,7 @@ def invoice_line_item(invoice, sales_invoice_doc):
             tax_amount_item.text = str(
                 abs(
                     round(
-                        (sales_invoice_doc.taxes[0].rate) * single_item.amount / 100, 2
+                        invoice_tax_rate(sales_invoice_doc) * single_item.amount / 100, 2
                     )
                 )
             )
@@ -992,7 +993,7 @@ def invoice_line_item(invoice, sales_invoice_doc):
             tax_amnt.text = str(
                 abs(
                     round(
-                        (sales_invoice_doc.taxes[0].rate) * single_item.amount / 100, 2
+                        invoice_tax_rate(sales_invoice_doc) * single_item.amount / 100, 2
                     )
                 )
             )
@@ -1007,7 +1008,7 @@ def invoice_line_item(invoice, sales_invoice_doc):
             cat_item_id.text = raw_invoice_type_code.split(":")[0].strip()
             # cat_item_id.text = str(sales_invoice_doc.custom_malaysia_tax_category)
             item_prct = ET.SubElement(tax_cate_item, "cbc:Percent")
-            item_prct.text = str(sales_invoice_doc.taxes[0].rate)
+            item_prct.text = str(invoice_tax_rate(sales_invoice_doc))
             # frappe.msgprint(
             #     f"Set tax category: ID={cat_item_id.text}, Percent={item_prct.text}"
             # # )
@@ -1393,7 +1394,6 @@ def attach_qr_code_to_sales_invoice(sales_invoice_doc, qr_image_path):
     sales_invoice_doc.notify_update()
 
 
-@frappe.whitelist(allow_guest=True)
 def delayed_qr_generation(sales_invoice_name):
     """Background job: generate and attach QR after delay."""
     try:

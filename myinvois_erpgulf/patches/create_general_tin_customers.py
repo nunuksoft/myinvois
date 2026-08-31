@@ -10,38 +10,38 @@ def execute():
     # General TIN Customers (for Sales Invoices)
     general_tin_customers = [
         {
-            "name": "EI000000000010",
+            "name": "EI00000000010",
             "customer_name": "General Public (E-Invoice)",
             "customer_group": "Individual",
             "territory": "Malaysia",
-            "custom_customer_tin_number": "EI000000000010",
+            "custom_customer_tin_number": "EI00000000010",
             "description": "General Public TIN - Used for local individuals providing only NRIC, consolidated e-invoices, and consolidated self-billed e-invoices for suppliers"
         },
         {
-            "name": "EI000000000020",
+            "name": "EI00000000020",
             "customer_name": "Foreign Buyer/Shipping Recipient (E-Invoice)",
             "customer_group": "Individual",
             "territory": "Malaysia",
-            "custom_customer_tin_number": "EI000000000020",
+            "custom_customer_tin_number": "EI00000000020",
             "description": "Foreign Buyer or Foreign Shipping Recipient TIN - Used for non-Malaysian individuals with passport, MyPR, MyKas, foreign buyers without TIN, and foreign shipping recipients without TIN"
         },
         {
-            "name": "EI000000000040",
+            "name": "EI00000000040",
             "customer_name": "Government or Government Authorities",
             "customer_group": "Individual",
             "territory": "Malaysia",
-            "custom_customer_tin_number": "EI000000000040",
+            "custom_customer_tin_number": "EI00000000040",
             "description": "Buyer TIN Government or Government Authorities - Used for transactions involving government, state governments, statutory or local authorities, and exempt institutions not assigned a TIN"
         }
     ]
     
     # General TIN Supplier (for Purchase Invoices)
     general_tin_supplier = {
-        "name": "EI000000000030",
+        "name": "EI00000000030",
         "supplier_name": "Foreign Supplier (E-Invoice)",
         "supplier_group": "Services",
         "supplier_type": "Individual",
-        "custom_customer_tin_number": "EI000000000030",
+        "custom_customer_tin_number": "EI00000000030",
         "description": "Foreign Supplier TIN - Used for individual foreign suppliers in self-billed e-invoices and import transactions with foreign suppliers without TIN"
     }
     
@@ -106,7 +106,7 @@ def execute():
             else:
                 print(f"ℹ️  General TIN Customer already exists with correct data: {customer_name}")
     
-    # Create General TIN Supplier (EI000000000030)
+    # Create General TIN Supplier (EI00000000030)
     supplier_id = general_tin_supplier["name"]
     supplier_name = general_tin_supplier["supplier_name"]
 

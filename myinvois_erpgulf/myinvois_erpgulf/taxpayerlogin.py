@@ -19,7 +19,36 @@ def get_api_url(company_abbr, base_url):
         return None
 
 
-@frappe.whitelist(allow_guest=True)
+def lhdn_headers(company_doc, token, content_type=None):
+    """Standard LHDN request headers for a company.
+
+    When the API credentials belong to an intermediary rather than to the
+    taxpayer itself, LHDN requires the taxpayer's TIN in an "onbehalfof"
+    header - without it the submission is rejected with "The authenticated TIN
+    and documents TIN is not matching". Sending the header when you *are* the
+    taxpayer is itself an error, so it is only added for companies configured
+    for intermediary submission.
+    """
+    headers = {"Authorization": f"Bearer {token}"}
+    if content_type:
+        headers["Content-Type"] = content_type
+
+    if company_doc.get("custom_submit_as_intermediary"):
+        taxpayer_tin = (company_doc.get("custom_company_tin_number") or "").strip()
+        if not taxpayer_tin:
+            frappe.throw(
+                _(
+                    "{0} is set to submit as an intermediary, so LHDN needs the"
+                    " taxpayer's TIN in the onbehalfof header. Fill in Company TIN"
+                    " Number first."
+                ).format(company_doc.name)
+            )
+        headers["onbehalfof"] = taxpayer_tin
+
+    return headers
+
+
+@frappe.whitelist(allow_guest=False)
 def get_access_token(doc):
     """Fetches the access token from the LHDN API for the specified company."""
     # Determine company name

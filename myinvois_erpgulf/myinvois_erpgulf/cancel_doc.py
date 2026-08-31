@@ -22,9 +22,13 @@ def get_api_url(company_abbr, base_url):
         frappe.throw(_(("get api url" f"error: {str(e)}")))
         return None
 
-@frappe.whitelist(allow_guest=True)
-def cancel_document_wrapper(doc, method):
-    """Wrapper function to handle document cancellation via LHDN."""
+def cancel_document_wrapper(doc, method=None):
+    """Wrapper function to handle document cancellation via LHDN.
+
+    Wired as the on_cancel doc event in hooks.py - it is never called as an
+    API. It used to carry a guest-accessible whitelist decorator, which exposed
+    "cancel this e-Invoice at LHDN" to any unauthenticated caller for no gain.
+    """
 
     if not doc.custom_submit_response:
 
@@ -100,8 +104,11 @@ def cancel_document_wrapper(doc, method):
 
         # Retry if token expired or internal server error
         if response.status_code in [401, 500]:
-            get_access_token(company_doc)
-            settings.reload()
+            # get_access_token accepts a company name or a dict - handing it the
+            # Document hits its "Invalid argument type for doc" throw, so this
+            # retry used to fail instead of refreshing the token.
+            get_access_token(company_doc.name)
+            company_doc.reload()
             token = company_doc.custom_bearer_token
             headers["Authorization"] = f"Bearer {token}"
 
